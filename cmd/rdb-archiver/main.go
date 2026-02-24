@@ -37,7 +37,7 @@ func main() {
 
 	// Initialize components
 	logg := logging.StdLogger{}
-	ret := retention.New(cfg, logg)
+	ret := retention.New(&cfg, logg)
 
 	queue := worker.NewQueue(32)
 

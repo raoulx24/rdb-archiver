@@ -1,5 +1,3 @@
-// rdb-archiver is the entry point for the snapshot archiving service.
-// It wires together the watcher, queue, worker, and filesystem layer.
 package main
 
 import (
@@ -10,17 +8,19 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/raoulx24/rdb-archiver/internal/fs"
+	"github.com/raoulx24/rdb-archiver/internal/config"
+	"github.com/raoulx24/rdb-archiver/internal/logging"
+	"github.com/raoulx24/rdb-archiver/internal/retention"
 	"github.com/raoulx24/rdb-archiver/internal/watcher"
 	"github.com/raoulx24/rdb-archiver/internal/worker"
 )
 
 func main() {
-	// Create cancellable root context
+	// Root context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Handle SIGINT/SIGTERM for graceful shutdown
+	// Graceful shutdown on SIGINT/SIGTERM
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -29,15 +29,30 @@ func main() {
 		cancel()
 	}()
 
-	// Configure paths
-	rdbDir := "./data"        // directory where Redis/Valkey writes RDB files
-	archiveDir := "./archive" // directory where snapshots are stored
+	// Load config
+	cfg, err := config.Load("config.yaml")
+	if err != nil {
+		log.Fatalf("failed to load config: %v", err)
+	}
 
 	// Initialize components
-	filesystem := fs.New()
+	logg := logging.StdLogger{}
+	ret := retention.New(cfg, logg)
+
 	queue := worker.NewQueue(32)
-	w := worker.New(filesystem, archiveDir)
-	watch := watcher.New(rdbDir, queue)
+
+	// Worker constructor: (archiveDir, logger, retentionEngine)
+	w := worker.New(
+		cfg.Destination.Root,
+		logg,
+		ret,
+	)
+
+	// Watcher constructor: (rdbDir, queue)
+	watch := watcher.New(
+		cfg.Source.Path,
+		queue,
+	)
 
 	// Start worker loop
 	go worker.RunLoop(ctx, w, queue)
@@ -45,7 +60,7 @@ func main() {
 	// Start watcher loop (poll every 2 seconds)
 	go watch.Start(ctx, 2*time.Second)
 
-	// Block until context is canceled
+	// Block until shutdown
 	<-ctx.Done()
 	log.Println("exit complete")
 }

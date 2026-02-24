@@ -8,20 +8,38 @@ import (
 	"path/filepath"
 
 	"github.com/raoulx24/rdb-archiver/internal/fs"
+	"github.com/raoulx24/rdb-archiver/internal/logging"
+	"github.com/raoulx24/rdb-archiver/internal/retention"
 )
 
-// Worker processes snapshot jobs by copying the source RDB file into a temporary
-// location, validating it, and atomically renaming it into the final archive path.
 type Worker struct {
-	fs         fs.FS
 	archiveDir string
+	log        logging.Logger
+	retention  *retention.Engine
+	fs         fs.FS
 }
 
-func New(f fs.FS, archiveDir string) *Worker {
+func New(archiveDir string, log logging.Logger, r *retention.Engine) *Worker {
 	return &Worker{
-		fs:         f,
 		archiveDir: archiveDir,
+		log:        log,
+		retention:  r,
 	}
+}
+
+// Handle runs the snapshot job and then applies retention.
+func (w *Worker) Handle(ctx context.Context, srcPath string) error {
+	finalPath, err := w.Run(ctx, srcPath)
+	if err != nil {
+		return err
+	}
+
+	// Trigger retention AFTER the snapshot is finalized
+	if err := w.retention.Apply(ctx, w.archiveDir, finalPath); err != nil {
+		w.log.Error("worker: retention failed: %v", err)
+	}
+
+	return nil
 }
 
 // Run executes a single snapshot job and returns the final archived file path.

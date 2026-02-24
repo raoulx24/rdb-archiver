@@ -387,9 +387,9 @@ Worker → Retention: apply rules
 Retention → FS: delete old snapshots
 Worker → Main: SnapshotResult
 🧱 8. Mermaid Diagram
+
 ```mermaid
 flowchart TD
-
     A[Redis writes dump.rdb] --> B[Watcher detects change]
     B --> C[Debounce]
     C --> D[Queue.push(job)]

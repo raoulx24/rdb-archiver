@@ -1,40 +1,71 @@
-// Package watcher monitors the RDB directory for new or updated snapshot files
-// and submits jobs to the worker queue.
+// Package watcher monitors the source directory and emits snapshot jobs.
 package watcher
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"time"
 
+	"github.com/raoulx24/rdb-archiver/internal/config"
+	"github.com/raoulx24/rdb-archiver/internal/fsprobe"
+	"github.com/raoulx24/rdb-archiver/internal/logging"
+	"github.com/raoulx24/rdb-archiver/internal/mailbox"
 	"github.com/raoulx24/rdb-archiver/internal/worker"
 )
 
-// Watcher observes a directory for RDB file changes and pushes jobs into a queue.
+// Watcher observes the primary file and enqueues new snapshots when updated.
 type Watcher struct {
-	dir   string
-	queue *worker.Queue
+	mu sync.RWMutex
+
+	dir         string
+	primaryName string
+	auxNames    []string
+	interval    time.Duration
+	mode        string
+	debounce    time.Duration
+
+	log logging.Logger
+
+	lastModTime time.Time
+
+	mb *mailbox.Mailbox[worker.Job]
 }
 
-func New(dir string, q *worker.Queue) *Watcher {
+// New creates a watcher from the source configuration.
+func New(cfg config.SourceConfig, log logging.Logger, mb *mailbox.Mailbox[worker.Job]) *Watcher {
 	return &Watcher{
-		dir:   dir,
-		queue: q,
+		dir:         cfg.Path,
+		primaryName: cfg.PrimaryName,
+		auxNames:    cfg.AuxNames,
+		interval:    cfg.Watch.PollInterval,
+		mode:        cfg.Watch.Mode,
+		debounce:    cfg.Watch.DebounceWindow,
+		log:         log,
+		mb:          mb,
 	}
 }
 
-// Start begins the polling loop that checks for new or modified RDB files.
-func (w *Watcher) Start(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+// Start chooses the correct watching strategy based on config.
+func (w *Watcher) Start(ctx context.Context) error {
+	switch w.mode {
+	case "fsnotify":
+		return w.StartFsNotify(ctx)
 
-	seen := make(map[string]time.Time)
+	case "poll":
+		w.StartPolling(ctx)
+		return nil
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			w.scan(ctx, seen)
+	case "auto":
+		res := fsprobe.Probe(w.dir)
+		if res.FsnotifySupported {
+			return w.StartFsNotify(ctx)
 		}
+		w.log.Warn("fsnotify disabled: %s", res.Reason)
+		w.StartPolling(ctx)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown mode %q", w.mode)
 	}
 }

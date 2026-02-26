@@ -1,11 +1,8 @@
 ﻿package worker
 
-import (
-	"time"
-)
+import "github.com/raoulx24/rdb-archiver/internal/snapshot"
 
-// Job represents a snapshot job submitted to the worker.
+// Job wraps a snapshot for mailbox delivery.
 type Job struct {
-	SourcePath string
-	Timestamp  time.Time
+	Snap snapshot.Snapshot
 }

@@ -6,21 +6,20 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/raoulx24/rdb-archiver/internal/config"
 	"github.com/raoulx24/rdb-archiver/internal/logging"
+	"github.com/raoulx24/rdb-archiver/internal/mailbox"
 	"github.com/raoulx24/rdb-archiver/internal/retention"
 	"github.com/raoulx24/rdb-archiver/internal/watcher"
 	"github.com/raoulx24/rdb-archiver/internal/worker"
 )
 
 func main() {
-	// Root context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Graceful shutdown on SIGINT/SIGTERM
+	// Graceful shutdown
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -35,32 +34,63 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	// Initialize components
+	// Logger
 	logg := logging.StdLogger{}
-	ret := retention.New(&cfg, logg)
 
-	queue := worker.NewQueue(32)
+	// Mailbox for snapshot jobs
+	mb := mailbox.New[worker.Job]()
 
-	// Worker constructor: (archiveDir, logger, retentionEngine)
+	// Retention engine (promotion + cleanup)
+	ret := retention.New(cfg, logg)
+
+	// Worker (snapshot writer + promotion + cleanup)
 	w := worker.New(
-		cfg.Destination.Root,
+		cfg.Destination,
 		logg,
 		ret,
+		mb,
+		nil, // fs.FS (nil = default)
 	)
 
-	// Watcher constructor: (rdbDir, queue)
+	// Watcher (detects snapshots and pushes into mailbox)
 	watch := watcher.New(
-		cfg.Source.Path,
-		queue,
+		cfg.Source,
+		logg,
+		mb,
 	)
 
 	// Start worker loop
-	go worker.RunLoop(ctx, w, queue)
+	go w.Start(ctx)
 
-	// Start watcher loop (poll every 2 seconds)
-	go watch.Start(ctx, 2*time.Second)
+	// Start watcher loop
+	go func() {
+		err := watch.Start(ctx)
+		if err != nil {
+			log.Fatalf("failed to start watcher: %v", err)
+		}
+	}()
 
-	// Block until shutdown
+	// Hot reload on SIGHUP
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGHUP)
+
+		for range sigCh {
+			newCfg, err := config.Load("config.yaml")
+			if err != nil {
+				logg.Error("config reload failed: %v", err)
+				continue
+			}
+
+			// Apply updates
+			w.UpdateConfig(newCfg.Destination)
+			watch.UpdateConfig(newCfg.Source)
+			ret.UpdateConfig(newCfg)
+
+			logg.Info("config reloaded")
+		}
+	}()
+
 	<-ctx.Done()
 	log.Println("exit complete")
 }

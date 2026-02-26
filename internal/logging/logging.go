@@ -6,6 +6,7 @@ import "log"
 // Logger defines the logging interface used across the application.
 type Logger interface {
 	Info(msg string, args ...any)
+	Warn(msg string, args ...any)
 	Error(msg string, args ...any)
 }
 
@@ -13,9 +14,13 @@ type Logger interface {
 type StdLogger struct{}
 
 func (StdLogger) Info(msg string, args ...any) {
-	log.Printf("INFO: "+msg, args...)
+	log.Printf("[INFO]: "+msg, args...)
+}
+
+func (StdLogger) Warn(msg string, args ...any) {
+	log.Printf("[WARN]: "+msg, args...)
 }
 
 func (StdLogger) Error(msg string, args ...any) {
-	log.Printf("ERROR: "+msg, args...)
+	log.Printf("[ERR]: "+msg, args...)
 }

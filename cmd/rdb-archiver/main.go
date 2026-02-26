@@ -19,23 +19,26 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Graceful shutdown
-	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		<-sigCh
-		log.Println("shutting down...")
-		cancel()
-	}()
+	// Temporary fallback logger
+	stdLog := log.New(os.Stdout, "", log.LstdFlags)
 
-	// Load config
+	// 1️⃣ Load config
 	cfg, err := config.Load("config.yaml")
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		stdLog.Fatalf("failed to load config: %v", err)
 	}
 
 	// Logger
-	logg := logging.StdLogger{}
+	logg := logging.NewSlogLogger(cfg.Logging.Level, cfg.Logging.Format)
+
+	// Graceful shutdown
+	go func(logg logging.Logger) {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		<-sigCh
+		logg.Info("shutting down...")
+		cancel()
+	}(logg)
 
 	// Mailbox for snapshot jobs
 	mb := mailbox.New[worker.Job]()
@@ -66,7 +69,8 @@ func main() {
 	go func() {
 		err := watch.Start(ctx)
 		if err != nil {
-			log.Fatalf("failed to start watcher: %v", err)
+			logg.Error("failed to start watcher", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -78,7 +82,7 @@ func main() {
 		for range sigCh {
 			newCfg, err := config.Load("config.yaml")
 			if err != nil {
-				logg.Error("config reload failed: %v", err)
+				logg.Error("config reload failed", "error", err)
 				continue
 			}
 

@@ -17,6 +17,10 @@ func (w *Watcher) detect() {
 	last := w.lastModTime
 	w.mu.RUnlock()
 
+	if !w.isPrimaryFileStable() {
+		return
+	}
+
 	path := filepath.Join(dir, primary)
 
 	info, err := os.Stat(path)

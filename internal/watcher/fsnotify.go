@@ -19,13 +19,17 @@ func (w *Watcher) StartFsNotify(ctx context.Context) error {
 	w.mu.RLock()
 	dir := w.dir
 	debounce := w.debounce
+	primary := w.primaryName
 	w.mu.RUnlock()
 
 	if err := watcher.Add(dir); err != nil {
 		return err
 	}
 
-	var last time.Time
+	var (
+		timer  *time.Timer
+		timerC <-chan time.Time
+	)
 
 	for {
 		select {
@@ -33,20 +37,24 @@ func (w *Watcher) StartFsNotify(ctx context.Context) error {
 			return nil
 
 		case ev := <-watcher.Events:
-			w.mu.RLock()
-			primary := w.primaryName
-			w.mu.RUnlock()
-
 			if filepath.Base(ev.Name) != primary {
 				continue
 			}
 
-			if time.Since(last) < debounce {
-				continue
+			// Start or reset debounce timer
+			if timer != nil {
+				if !timer.Stop() {
+					<-timer.C // drain if needed
+				}
 			}
-			last = time.Now()
 
+			timer = time.NewTimer(debounce)
+			timerC = timer.C
+
+		case <-timerC:
+			// Debounce window passed without new events
 			w.detect()
+			timerC = nil
 
 		case <-watcher.Errors:
 			// ignore errors

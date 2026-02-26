@@ -24,6 +24,7 @@ type Watcher struct {
 	interval    time.Duration
 	mode        string
 	debounce    time.Duration
+	stability   time.Duration
 
 	log logging.Logger
 
@@ -41,6 +42,7 @@ func New(cfg config.SourceConfig, log logging.Logger, mb *mailbox.Mailbox[worker
 		interval:    cfg.Watch.PollInterval,
 		mode:        cfg.Watch.Mode,
 		debounce:    cfg.Watch.DebounceWindow,
+		stability:   cfg.Watch.StabilityWindow,
 		log:         log,
 		mb:          mb,
 	}

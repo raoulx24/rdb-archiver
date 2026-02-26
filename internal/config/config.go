@@ -17,20 +17,21 @@ type SourceConfig struct {
 }
 
 type WatchConfig struct {
-	Mode           string        `yaml:"mode"`            // "auto", "poll", "fsnotify"
-	PollInterval   time.Duration `yaml:"poll_interval"`   // e.g. 5s
-	DebounceWindow time.Duration `yaml:"debounce_window"` // e.g. 500ms
+	Mode            string        `yaml:"mode"`           // "auto", "poll", "fsnotify"
+	PollInterval    time.Duration `yaml:"pollInterval"`   // e.g. 5s
+	DebounceWindow  time.Duration `yaml:"debounceWindow"` // e.g. 500ms
+	StabilityWindow time.Duration `yaml:"stabilityWindow"`
 }
 
 type DestinationConfig struct {
 	Root           string          `yaml:"root"`
 	SubDirEnv      string          `yaml:"subDirEnv"`
-	SnapshotSubdir string          `yaml:"snapshot_subdir"`
+	SnapshotSubdir string          `yaml:"snapshotSubdir"`
 	Retention      RetentionConfig `yaml:"retention"`
 }
 
 type RetentionConfig struct {
-	LastCount int             `yaml:"last_count"`
+	LastCount int             `yaml:"lastCount"`
 	Rules     []RetentionRule `yaml:"rules"`
 }
 

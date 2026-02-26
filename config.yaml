@@ -5,15 +5,16 @@
   - "aux1.dat"
   watch:
     mode: "fsnotify"          # auto | poll | fsnotify
-    poll_interval: "5s"       # time.Duration
+    pollInterval: "5s"        # time.Duration
     debounce_window: "200ms"  # time.Duration
+    stabilityWindow: "200ms"
 
 destination:
   root: "/tmp/rdb-archive/dest"
   subDirEnv: ""
-  snapshot_subdir: "snapshots"
+  snapshotSubdir: "snapshots"
   retention:
-    last_count: 5
+    lastCount: 5
     rules:
       - name: "daily"
         cron: "0 0 * * *"

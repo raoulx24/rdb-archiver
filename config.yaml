@@ -1,0 +1,31 @@
+﻿source:
+  path: "/tmp/rdb-archive/source"
+  primaryName: "nodes.conf"
+  auxNames:
+  - "aux1.dat"
+  watch:
+    mode: "fsnotify"          # auto | poll | fsnotify
+    poll_interval: "5s"       # time.Duration
+    debounce_window: "200ms"  # time.Duration
+
+destination:
+  root: "/tmp/rdb-archive/dest"
+  subDirEnv: ""
+  snapshot_subdir: "snapshots"
+  retention:
+    last_count: 5
+    rules:
+      - name: "daily"
+        cron: "0 0 * * *"
+        count: 7
+      - name: "weekly"
+        cron: "0 0 * * 0"
+        count: 4
+
+logging:
+  level: "info"     # info | debug | warn | error
+  format: "json"    # json | text
+
+configReload:
+  enabled: true
+  method: "fsnotify"

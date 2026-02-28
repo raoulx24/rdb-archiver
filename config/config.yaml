@@ -11,7 +11,7 @@
 
 destination:
   root: "/tmp/rdb-archive/dest"
-  subDirEnv: ""
+  subDir: "$(HOSTNAME)"
   snapshotSubdir: "snapshots"
   retention:
     lastCount: 5

@@ -25,7 +25,7 @@ type WatchConfig struct {
 
 type DestinationConfig struct {
 	Root           string          `yaml:"root"`
-	SubDirEnv      string          `yaml:"subDirEnv"`
+	SubDir         string          `yaml:"subDir"`
 	SnapshotSubdir string          `yaml:"snapshotSubdir"`
 	Retention      RetentionConfig `yaml:"retention"`
 }

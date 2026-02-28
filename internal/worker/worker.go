@@ -4,7 +4,6 @@ package worker
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sync"
 
@@ -67,7 +66,7 @@ func (w *Worker) Handle(ctx context.Context, snap snapshot.Snapshot) error {
 	dest := w.dest
 	w.mu.RUnlock()
 
-	root := w.resolveRoot(dest)
+	root := filepath.Join(dest.Root, dest.SubDir)
 	w.log.Debug("destination root resolved", "root", root)
 
 	if err := w.retention.Apply(ctx, root, finalDir); err != nil {
@@ -93,7 +92,7 @@ func (w *Worker) writeSnapshot(ctx context.Context, snap snapshot.Snapshot) (str
 	dest := w.dest
 	w.mu.RUnlock()
 
-	root := w.resolveRoot(dest)
+	root := filepath.Join(dest.Root, dest.SubDir)
 	lastDir := filepath.Join(root, dest.SnapshotSubdir)
 
 	//ts := time.Now().UTC().Format("2006-01-02T15-04-05")
@@ -140,17 +139,7 @@ func (w *Worker) copyArtifact(ctx context.Context, a snapshot.Artifact, srcDir s
 	return nil
 }
 
-// resolveRoot computes the final destination root.
-func (w *Worker) resolveRoot(dest config.DestinationConfig) string {
-	if dest.SubDirEnv != "" {
-		if v := os.Getenv(dest.SubDirEnv); v != "" {
-			return filepath.Join(dest.Root, v)
-		}
-	}
-	host, _ := os.Hostname()
-	return filepath.Join(dest.Root, host)
-}
-
+// updateRetentionRules adds to the retention rules the snapshot one
 func (w *Worker) updateRetentionRules() {
 	w.log.Debug("entering Worker.updateRetentionRules")
 	w.mu.RLock()

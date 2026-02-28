@@ -23,8 +23,8 @@ func New[T any]() *Mailbox[T] {
 func (m *Mailbox[T]) Put(j T) {
 	m.mu.Lock()
 	m.job = &j
-	m.mu.Unlock()
 	m.cond.Signal() // wake up worker if waiting
+	m.mu.Unlock()
 }
 
 // Take blocks until a job is available, then returns it and clears the slot.

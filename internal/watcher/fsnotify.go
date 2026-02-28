@@ -26,38 +26,55 @@ func (w *Watcher) StartFsNotify(ctx context.Context) error {
 		return err
 	}
 
-	var (
-		timer  *time.Timer
-		timerC <-chan time.Time
-	)
+	// Channel to request debounce resets
+	resetCh := make(chan struct{}, 1)
+
+	// Debounce goroutine
+	go func() {
+		var t *time.Timer
+		for range resetCh {
+			if t != nil {
+				t.Stop()
+			}
+			t = time.AfterFunc(debounce, func() {
+				defer func() {
+					if r := recover(); r != nil {
+						w.log.Error("detect panic", "panic", r)
+					}
+				}()
+				w.detect()
+			})
+		}
+	}()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 
-		case ev := <-watcher.Events:
+		case ev, ok := <-watcher.Events:
+			if !ok {
+				w.log.Error("events channel closed")
+				return nil
+			}
+
+			w.log.Debug("event", "name", ev.Name, "op", ev.Op)
+
 			if filepath.Base(ev.Name) != primary {
 				continue
 			}
 
-			// Start or reset debounce timer
-			if timer != nil {
-				if !timer.Stop() {
-					<-timer.C // drain if needed
-				}
+			// Non-blocking send to reset debounce
+			select {
+			case resetCh <- struct{}{}:
+			default:
 			}
 
-			timer = time.NewTimer(debounce)
-			timerC = timer.C
-
-		case <-timerC:
-			// Debounce window passed without new events
-			w.detect()
-			timerC = nil
-
-		case <-watcher.Errors:
-			// ignore errors
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return nil
+			}
+			w.log.Error("fsnotify error", "error", err)
 		}
 	}
 }

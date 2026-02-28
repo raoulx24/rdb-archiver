@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,18 +25,18 @@ type Engine struct {
 }
 
 // New creates a retention engine from config.
-func New(cfg *config.Config, log logging.Logger) *Engine {
+func New(log logging.Logger) *Engine {
 	return &Engine{
-		rules: cfg.Destination.Retention.Rules,
+		rules: []config.RetentionRule{},
 		log:   log,
 	}
 }
 
 // UpdateConfig hot‑reloads retention rules.
-func (e *Engine) UpdateConfig(cfg *config.Config) {
+func (e *Engine) UpdateConfig(rules []config.RetentionRule) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.rules = cfg.Destination.Retention.Rules
+	e.rules = rules
 }
 
 // Apply promotes the new snapshot and prunes old ones.
@@ -52,8 +53,10 @@ func (e *Engine) Apply(ctx context.Context, archiveRoot, newSnapshotDir string) 
 	for _, rule := range rules {
 		ruleDir := filepath.Join(archiveRoot, rule.Name)
 
-		if err := e.promote(rule, ruleDir, newSnapshotDir, ts); err != nil {
-			e.log.Error("retention: promote %s failed: %v", rule.Name, err)
+		if strings.TrimSpace(rule.Cron) != "" {
+			if err := e.promote(rule, ruleDir, newSnapshotDir, ts); err != nil {
+				e.log.Error("retention: promote %s failed: %v", rule.Name, err)
+			}
 		}
 
 		if err := e.cleanup(rule, ruleDir); err != nil {

@@ -42,20 +42,15 @@ func New(dest config.DestinationConfig, log logging.Logger, r *retention.Engine,
 }
 
 // UpdateConfig hot‑reloads destination settings.
-func (w *Worker) UpdateConfig(dest config.DestinationConfig) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.dest = dest
-}
 
 // Start runs the worker loop using mailbox semantics.
 func (w *Worker) Start(ctx context.Context) {
+	w.log.Info("starting worker")
+	w.updateRetentionRules()
 	for {
-		for {
-			job := w.mb.Take()
-			if err := w.Handle(ctx, job.Snap); err != nil {
-				w.log.Error("worker: snapshot failed: %v", err)
-			}
+		job := w.mb.Take()
+		if err := w.Handle(ctx, job.Snap); err != nil {
+			w.log.Error("worker: snapshot failed", "error", err)
 		}
 	}
 }
@@ -74,10 +69,18 @@ func (w *Worker) Handle(ctx context.Context, snap snapshot.Snapshot) error {
 	root := w.resolveRoot(dest)
 
 	if err := w.retention.Apply(ctx, root, finalDir); err != nil {
-		w.log.Error("worker: retention failed: %v", err)
+		w.log.Error("worker: retention failed", "error", err)
 	}
 
 	return nil
+}
+
+func (w *Worker) UpdateConfig(dest config.DestinationConfig) {
+	w.mu.Lock()
+	w.dest = dest
+	w.mu.Unlock()
+
+	w.updateRetentionRules()
 }
 
 // writeSnapshot copies all snapshot files into an atomic directory.
@@ -139,4 +142,18 @@ func (w *Worker) resolveRoot(dest config.DestinationConfig) string {
 	}
 	host, _ := os.Hostname()
 	return filepath.Join(dest.Root, host)
+}
+
+func (w *Worker) updateRetentionRules() {
+	w.mu.RLock()
+	mainRule := config.RetentionRule{
+		Name:  w.dest.SnapshotSubdir,
+		Cron:  "",
+		Count: w.dest.Retention.LastCount,
+	}
+
+	// Create a brand‑new slice, seeded with the new rule
+	updated := append([]config.RetentionRule{mainRule}, w.dest.Retention.Rules...)
+	w.retention.UpdateConfig(updated)
+	w.mu.RUnlock()
 }

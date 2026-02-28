@@ -50,6 +50,8 @@ func New(cfg config.SourceConfig, log logging.Logger, mb *mailbox.Mailbox[worker
 
 // Start chooses the correct watching strategy based on config.
 func (w *Watcher) Start(ctx context.Context) error {
+	// before watcher starts, ensure there is at least one backup saved
+	w.detect()
 	switch w.mode {
 	case "fsnotify":
 		return w.StartFsNotify(ctx)

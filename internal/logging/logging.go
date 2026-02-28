@@ -65,6 +65,11 @@ func NewSlogLogger(level string, format string) *SlogLogger {
 	}
 }
 
+// Debug logs a debug message with optional key/value fields.
+func (l *SlogLogger) Debug(msg string, args ...any) {
+	l.logger.Debug(msg, args...)
+}
+
 // Info logs an informational message with optional key/value fields.
 func (l *SlogLogger) Info(msg string, args ...any) {
 	l.logger.Info(msg, args...)

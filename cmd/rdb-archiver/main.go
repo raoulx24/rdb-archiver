@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/raoulx24/rdb-archiver/internal/config"
 	"github.com/raoulx24/rdb-archiver/internal/logging"
 	"github.com/raoulx24/rdb-archiver/internal/mailbox"
@@ -19,11 +20,13 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	configFile := "config/config.yaml"
+
 	// Temporary fallback logger
 	stdLog := log.New(os.Stdout, "", log.LstdFlags)
 
 	// 1️⃣ Load config
-	cfg, err := config.Load("config.yaml")
+	cfg, err := config.Load(configFile)
 	if err != nil {
 		stdLog.Fatalf("failed to load config: %v", err)
 	}
@@ -44,7 +47,7 @@ func main() {
 	mb := mailbox.New[worker.Job]()
 
 	// Retention engine (promotion + cleanup)
-	ret := retention.New(cfg, logg)
+	ret := retention.New(logg)
 
 	// Worker (snapshot writer + promotion + cleanup)
 	w := worker.New(
@@ -74,27 +77,37 @@ func main() {
 		}
 	}()
 
-	// Hot reload on SIGHUP
+	// Hot reload on config.tyaml change
 	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGHUP)
+		configWatcher, _ := fsnotify.NewWatcher()
+		err := configWatcher.Add(configFile)
+		if err != nil {
+			logg.Error("failed to watch config file", "error", err, "configFile", configFile)
+			os.Exit(1)
+		}
 
-		for range sigCh {
-			newCfg, err := config.Load("config.yaml")
-			if err != nil {
-				logg.Error("config reload failed", "error", err)
-				continue
+		for {
+			select {
+			case event := <-configWatcher.Events:
+				if event.Op&fsnotify.Write == fsnotify.Write {
+					logg.Debug("reloading config file")
+					newCfg, err := config.Load(configFile)
+					if err != nil {
+						logg.Error("config reload failed", "error", err, "configFile", configFile)
+						continue
+					}
+
+					// Apply updates
+					w.UpdateConfig(newCfg.Destination)
+					watch.UpdateConfig(newCfg.Source)
+					//ret.UpdateConfig(newCfg)
+
+					logg.Info("config reloaded")
+				}
 			}
-
-			// Apply updates
-			w.UpdateConfig(newCfg.Destination)
-			watch.UpdateConfig(newCfg.Source)
-			ret.UpdateConfig(newCfg)
-
-			logg.Info("config reloaded")
 		}
 	}()
 
 	<-ctx.Done()
-	log.Println("exit complete")
+	stdLog.Println("exit complete")
 }

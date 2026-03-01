@@ -1,4 +1,4 @@
-﻿package watcher
+﻿package snapshotwatcher
 
 import (
 	"time"

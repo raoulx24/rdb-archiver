@@ -1,11 +1,8 @@
-﻿package watcher
+﻿package snapshot
 
 import (
 	"os"
 	"path/filepath"
-
-	"github.com/raoulx24/rdb-archiver/internal/snapshot"
-	"github.com/raoulx24/rdb-archiver/internal/worker"
 )
 
 // detect builds and enqueues a snapshot if the primary file changed.
@@ -34,9 +31,9 @@ func (w *Watcher) detect() {
 		return
 	}
 
-	snap := snapshot.Snapshot{
+	snap := Snapshot{
 		Dir:     dir,
-		Primary: snapshot.FromFileInfo(path, info),
+		Primary: FromFileInfo(path, info),
 		Aux:     w.loadAux(dir, aux),
 	}
 
@@ -46,5 +43,5 @@ func (w *Watcher) detect() {
 
 	w.log.Debug("mama", "cucu", snap)
 
-	w.mb.Put(worker.Job{Snap: snap})
+	w.mb.Put(Job{Snap: snap})
 }

@@ -18,36 +18,37 @@ import (
 
 // Engine manages promotion and cleanup rules.
 type Engine struct {
-	mu    sync.RWMutex
-	rules []RetentionRule
-	log   logging.Logger
+	mu  sync.RWMutex
+	cfg Config
+	log logging.Logger
 }
 
-type RetentionRule struct {
+type Rule struct {
 	Name  string `yaml:"name"`
 	Cron  string `yaml:"cron"`
 	Count int    `yaml:"count"`
 }
 
-// New creates a retention engine from config.
+// New creates a retention engine from cfg.
 func New(log logging.Logger) *Engine {
 	return &Engine{
-		rules: []RetentionRule{},
-		log:   log,
+		cfg: Config{},
+		log: log,
 	}
 }
 
 // UpdateConfig hot‑reloads retention rules.
-func (e *Engine) UpdateConfig(rules []RetentionRule) {
+func (e *Engine) UpdateConfig(config Config) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.rules = rules
+	e.cfg = config
 }
 
 // Apply promotes the new snapshotwatcher and prunes old ones.
 func (e *Engine) Apply(ctx context.Context, archiveRoot, newSnapshotDir string) error {
 	e.mu.RLock()
-	rules := append([]RetentionRule(nil), e.rules...)
+	rules := append([]Rule(nil), e.cfg.Rules...)
+	removeUnknownFolders := e.cfg.RemoveUnknownFolders
 	e.mu.RUnlock()
 
 	ts, err := parseTimestamp(filepath.Base(newSnapshotDir))
@@ -60,12 +61,18 @@ func (e *Engine) Apply(ctx context.Context, archiveRoot, newSnapshotDir string) 
 
 		if strings.TrimSpace(rule.Cron) != "" {
 			if err := e.promote(rule, ruleDir, newSnapshotDir, ts); err != nil {
-				e.log.Error("retention: promote %s failed: %v", rule.Name, err)
+				e.log.Error("promote failed", "goPackage", "retention", "ruleName", rule.Name, "error", err)
 			}
 		}
 
 		if err := e.cleanup(rule, ruleDir); err != nil {
-			e.log.Error("retention: cleanup %s failed: %v", rule.Name, err)
+			e.log.Error("retention - cleanup %s failed", "goPackage", "retention", "ruleName", rule.Name, "error", err)
+		}
+	}
+
+	if removeUnknownFolders {
+		if err := e.removeUnknownFolders(rules, archiveRoot); err != nil {
+			e.log.Error("retention - remove unknown folders failed", "goPackage", "retention", "error", err)
 		}
 	}
 
@@ -73,7 +80,7 @@ func (e *Engine) Apply(ctx context.Context, archiveRoot, newSnapshotDir string) 
 }
 
 // promote copies the snapshotwatcher if none exists after the cron boundary.
-func (e *Engine) promote(rule RetentionRule, ruleDir, snapDir string, snapTS time.Time) error {
+func (e *Engine) promote(rule Rule, ruleDir, snapDir string, snapTS time.Time) error {
 	sched, err := cron.ParseStandard(rule.Cron)
 	if err != nil {
 		return fmt.Errorf("invalid cron %q: %w", rule.Cron, err)
@@ -81,6 +88,7 @@ func (e *Engine) promote(rule RetentionRule, ruleDir, snapDir string, snapTS tim
 
 	// Compute last cron boundary.
 	prev := prevCron(sched, snapTS)
+	next := sched.Next(prev)
 
 	// Ensure folder exists.
 	if err := os.MkdirAll(ruleDir, 0o755); err != nil {
@@ -92,9 +100,11 @@ func (e *Engine) promote(rule RetentionRule, ruleDir, snapDir string, snapTS tim
 	if err != nil {
 		return err
 	}
+
+	// If a snapshot already exists in this cron window, skip promotion.
 	for _, ts := range existing {
-		if ts.After(prev) {
-			return nil // already promoted
+		if !ts.Before(prev) && ts.Before(next) {
+			return nil
 		}
 	}
 
@@ -104,7 +114,7 @@ func (e *Engine) promote(rule RetentionRule, ruleDir, snapDir string, snapTS tim
 }
 
 // cleanup keeps only the newest N snapshotwatcher directories.
-func (e *Engine) cleanup(rule RetentionRule, ruleDir string) error {
+func (e *Engine) cleanup(rule Rule, ruleDir string) error {
 	entries, err := os.ReadDir(ruleDir)
 	if err != nil {
 		return fmt.Errorf("reading folder: %w", err)
@@ -127,6 +137,37 @@ func (e *Engine) cleanup(rule RetentionRule, ruleDir string) error {
 
 	for _, name := range dirs[rule.Count:] {
 		_ = os.RemoveAll(filepath.Join(ruleDir, name))
+	}
+
+	return nil
+}
+
+// removeUnknownFolders removes folders that are not defined in the retention rules.
+func (e *Engine) removeUnknownFolders(rules []Rule, ruleDir string) error {
+	known := make(map[string]struct{})
+	for _, r := range rules {
+		known[r.Name] = struct{}{}
+	}
+
+	entries, err := os.ReadDir(ruleDir)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+
+		if _, ok := known[name]; !ok {
+			full := filepath.Join(ruleDir, name)
+			e.log.Warn("Removing unknown folder", "path", full)
+			if err := os.RemoveAll(full); err != nil {
+				return fmt.Errorf("removing dir %s: %w", full, err)
+			}
+		}
 	}
 
 	return nil
@@ -207,15 +248,23 @@ func copyFile(src, dst string) error {
 
 // prevCron returns the most recent cron boundary before t.
 func prevCron(s cron.Schedule, t time.Time) time.Time {
-	// Start slightly before t to avoid returning t itself.
-	cur := t.Add(-time.Second)
+	// Start far enough in the past to guarantee we cross the boundary
+	cur := t.Add(-48 * time.Hour)
 
-	// Move backwards until s.Next(prev) >= t.
+	// Move forward until the next boundary is >= t
 	for {
 		next := s.Next(cur)
 		if !next.Before(t) {
 			return cur
 		}
-		cur = cur.Add(-time.Minute)
+		cur = next
 	}
+}
+
+func sameWindow(ts, boundary time.Time, sched cron.Schedule) bool {
+	// next boundary after "boundary"
+	next := sched.Next(boundary)
+
+	// ts must be >= boundary AND < next boundary
+	return !ts.Before(boundary) && ts.Before(next)
 }

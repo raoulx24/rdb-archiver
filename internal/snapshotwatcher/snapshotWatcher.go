@@ -48,13 +48,15 @@ func (w *SnapshotWatcher) Start(ctx context.Context) error {
 	mode := w.cfg.WatchMode
 	w.mu.RUnlock()
 
+	w.checkForNewSnapshot()
+
 	return w.fileWatch.StartWatchingForFile(ctx, mode, dir, file, w.events, w.log)
 }
 
-// consumeEvents runs detect() for each incoming signal.
+// consumeEvents runs checkForNewSnapshot() for each incoming signal.
 func (w *SnapshotWatcher) consumeEvents() {
 	for range w.events {
-		w.detect()
+		w.checkForNewSnapshot()
 	}
 }
 

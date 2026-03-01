@@ -10,8 +10,9 @@ type Config struct {
 }
 
 type RetentionConfig struct {
-	LastCount int                       `yaml:"lastCount"`
-	Rules     []retention.RetentionRule `yaml:"rules"`
+	LastCount            int              `yaml:"lastCount"`
+	RemoveUnknownFolders bool             `yaml:"removeUnknownFolders"`
+	Rules                []retention.Rule `yaml:"rules"`
 }
 
 func (c *Config) ApplyDefaults() {

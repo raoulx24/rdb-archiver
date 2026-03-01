@@ -7,8 +7,8 @@ import (
 	"github.com/raoulx24/rdb-archiver/internal/snapshot"
 )
 
-// detect checks for a new snapshot and emits a job if needed.
-func (w *SnapshotWatcher) detect() {
+// checkForNewSnapshot checks for a new snapshot and emits a job if needed.
+func (w *SnapshotWatcher) checkForNewSnapshot() {
 	w.mu.RLock()
 	dir := w.cfg.Path
 	primary := w.cfg.PrimaryName

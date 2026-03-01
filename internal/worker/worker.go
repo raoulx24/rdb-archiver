@@ -119,6 +119,11 @@ func (w *Worker) writeSnapshot(ctx context.Context, snap snapshot.Snapshot) (str
 	}
 
 	// Finalize atomically
+	if _, err := w.fs.Stat(finalDir); err == nil {
+		if err := w.fs.RemoveAll(finalDir); err != nil {
+			return "", fmt.Errorf("failed to remove existing finalDir: %w", err)
+		}
+	}
 	if err := w.fs.Rename(ctx, tmpDir, finalDir); err != nil {
 		_ = w.fs.RemoveAll(tmpDir)
 		return "", fmt.Errorf("finalizing snapshotwatcher: %w", err)
@@ -142,13 +147,13 @@ func (w *Worker) copyArtifact(ctx context.Context, a snapshot.Artifact, srcDir s
 func (w *Worker) updateRetentionRules() {
 	w.log.Debug("entering Worker.updateRetentionRules")
 	w.mu.RLock()
-	mainRule := retention.RetentionRule{
+	mainRule := retention.Rule{
 		Name:  w.cfg.SnapshotSubdir,
 		Cron:  "",
 		Count: w.cfg.Retention.LastCount,
 	}
-
-	updated := append([]retention.RetentionRule{mainRule}, w.cfg.Retention.Rules...)
-	w.retention.UpdateConfig(updated)
+	updated := append([]retention.Rule{mainRule}, w.cfg.Retention.Rules...)
+	removeUnknownFolders := w.cfg.Retention.RemoveUnknownFolders
 	w.mu.RUnlock()
+	w.retention.UpdateConfig(retention.Config{RemoveUnknownFolders: removeUnknownFolders, Rules: updated})
 }

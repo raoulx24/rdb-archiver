@@ -6,3 +6,16 @@ type Config struct {
 	AuxNames    []string `yaml:"auxNames"`
 	WatchMode   string   `yaml:"watchMode"`
 }
+
+func (c *Config) ApplyDefaults() {
+	if c.Path == "" {
+		c.Path = "/data"
+	}
+	if c.PrimaryName == "" {
+		c.PrimaryName = "dump.rdb"
+	}
+	if c.WatchMode == "" {
+		c.WatchMode = "fsnotify" // "auto" | "fsnotify" | "poll"
+	}
+	// AuxNames can stay empty; no default needed.
+}

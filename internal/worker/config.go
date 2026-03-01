@@ -13,3 +13,23 @@ type RetentionConfig struct {
 	LastCount int                       `yaml:"lastCount"`
 	Rules     []retention.RetentionRule `yaml:"rules"`
 }
+
+func (c *Config) ApplyDefaults() {
+	if c.Root == "" {
+		c.Root = "/var/backups/redis"
+	}
+	if c.SubDir == "" {
+		c.SubDir = "incoming"
+	}
+	if c.SnapshotSubdir == "" {
+		c.SnapshotSubdir = "snapshots"
+	}
+	c.Retention.ApplyDefaults()
+}
+
+func (c *RetentionConfig) ApplyDefaults() {
+	if c.LastCount == 0 {
+		c.LastCount = 5 // keep last 5 snapshots
+	}
+	// Rules slice can stay empty; no default needed.
+}

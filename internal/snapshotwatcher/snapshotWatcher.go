@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/raoulx24/rdb-archiver/internal/fsprobe"
 	"github.com/raoulx24/rdb-archiver/internal/logging"
 	"github.com/raoulx24/rdb-archiver/internal/mailbox"
 	"github.com/raoulx24/rdb-archiver/internal/snapshot"
@@ -44,36 +43,12 @@ func (w *SnapshotWatcher) Start(ctx context.Context) error {
 	go w.consumeEvents()
 
 	w.mu.RLock()
+	dir := w.cfg.Path
+	file := w.cfg.PrimaryName
 	mode := w.cfg.WatchMode
 	w.mu.RUnlock()
 
-	// Decide watch mode.
-	switch mode {
-	case "fsnotify":
-		// Always use fsnotify, no probing.
-		return w.fileWatch.WatchFsNotify(ctx, w.cfg.Path, w.cfg.PrimaryName, w.events)
-
-	case "poll":
-		// Always use polling.
-		return w.fileWatch.WatchPolling(ctx, w.events)
-
-	case "auto":
-		// Probe whether fsnotify works reliably.
-		res := fsprobe.Probe(w.cfg.Path)
-		if res.FsnotifySupported {
-			w.log.Debug("fsnotify supported", "dir", w.cfg.Path)
-			return w.fileWatch.WatchFsNotify(ctx, w.cfg.Path, w.cfg.PrimaryName, w.events)
-		}
-
-		// Fallback to polling.
-		w.log.Error("fsnotify disabled, falling back to polling", "reason", res.Reason)
-		return w.fileWatch.WatchPolling(ctx, w.events)
-
-	default:
-		// Unknown mode → safe fallback.
-		w.log.Error("invalid watch mode, using polling", "mode", mode)
-		return w.fileWatch.WatchPolling(ctx, w.events)
-	}
+	return w.fileWatch.StartWatchingForFile(ctx, mode, dir, file, w.events, w.log)
 }
 
 // consumeEvents runs detect() for each incoming signal.

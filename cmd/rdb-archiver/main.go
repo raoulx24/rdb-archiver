@@ -85,8 +85,10 @@ func main() {
 		}
 	}()
 
-	// Start config hot‑reload watcher
-	go startConfigReload(ctx, fw, snapWatcher, mainWorker, logg)
+	if cfg.ConfigReload.Enabled {
+		// Start config hot‑reload watcher
+		go startConfigReload(ctx, fw, snapWatcher, mainWorker, logg, configFile, cfg.ConfigReload.Method)
+	}
 
 	<-ctx.Done()
 	stdLog.Println("exit complete")

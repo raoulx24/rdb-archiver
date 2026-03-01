@@ -38,11 +38,9 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-func applyDefaults(cfg *Config) {
-	if cfg.Server == nil {
-		cfg.Server = &ServerConfig{}
-	}
-	if cfg.Server.Port == 0 {
-		cfg.Server.Port = 8080
-	}
+func (c *Config) ApplyDefaults() {
+	c.Source.ApplyDefaults()
+	c.Destination.ApplyDefaults()
+	c.WatchFS.ApplyDefaults()
+	c.Logging.ApplyDefaults()
 }

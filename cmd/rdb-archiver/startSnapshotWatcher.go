@@ -7,6 +7,8 @@ import (
 	"github.com/raoulx24/rdb-archiver/internal/snapshotwatcher"
 )
 
+var snapshotCancel context.CancelFunc
+
 func startSnapshotWatcher(ctx context.Context, sw *snapshotwatcher.SnapshotWatcher, logg logging.Logger) {
 	if snapshotCancel != nil {
 		snapshotCancel()

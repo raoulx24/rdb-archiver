@@ -17,8 +17,6 @@ import (
 	"github.com/raoulx24/rdb-archiver/internal/worker"
 )
 
-var snapshotCancel context.CancelFunc
-
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

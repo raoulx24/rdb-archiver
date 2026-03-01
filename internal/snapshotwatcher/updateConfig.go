@@ -6,3 +6,10 @@ func (w *SnapshotWatcher) UpdateConfig(cfg Config) {
 	w.cfg = cfg
 	w.mu.Unlock()
 }
+
+// NeedsRestart reports whether watcher must be restarted for config change.
+func (w *SnapshotWatcher) NeedsRestart(oldCfg, newCfg Config) bool {
+	return oldCfg.WatchMode != newCfg.WatchMode ||
+		oldCfg.Path != newCfg.Path ||
+		oldCfg.PrimaryName != newCfg.PrimaryName
+}

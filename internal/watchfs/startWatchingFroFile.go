@@ -7,6 +7,7 @@ import (
 	"github.com/raoulx24/rdb-archiver/internal/logging"
 )
 
+// StartWatchingForFile chooses mode and starts watching a single file.
 func (w *FileWatcher) StartWatchingForFile(
 	ctx context.Context,
 	mode string,

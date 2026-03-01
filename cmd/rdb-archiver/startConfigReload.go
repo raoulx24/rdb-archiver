@@ -12,7 +12,6 @@ import (
 	"github.com/raoulx24/rdb-archiver/internal/worker"
 )
 
-// startConfigReload watches config.yaml and applies updates.
 func startConfigReload(
 	ctx context.Context,
 	fw *watchfs.FileWatcher,
@@ -25,17 +24,31 @@ func startConfigReload(
 	dir := filepath.Dir(configFile)
 	base := filepath.Base(configFile)
 
-	// Channel for config reload events
 	reloadCh := make(chan struct{}, 1)
 
-	go func() {
-		if err := fw.StartWatchingForFile(ctx, method, dir, base, reloadCh, logg); err != nil {
-			logg.Error("config watcher failed", "error", err)
-		}
-	}()
+	// watcher cancel function for config.yaml watcher
+	var watchCancel context.CancelFunc
 
-	// Debounce + reload logic
+	startWatcher := func(mode string) {
+		if watchCancel != nil {
+			watchCancel()
+		}
+
+		var wctx context.Context
+		wctx, watchCancel = context.WithCancel(ctx)
+
+		go func() {
+			if err := fw.StartWatchingForFile(wctx, mode, dir, base, reloadCh, logg); err != nil {
+				logg.Error("config watcher failed", "error", err)
+			}
+		}()
+	}
+
+	// start initial config watcher
+	startWatcher(method)
+
 	var t *time.Timer
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -45,6 +58,7 @@ func startConfigReload(
 			if t != nil {
 				t.Stop()
 			}
+
 			t = time.AfterFunc(300*time.Millisecond, func() {
 				newCfg, err := config.Load(configFile)
 				if err != nil {
@@ -52,9 +66,26 @@ func startConfigReload(
 					return
 				}
 
-				fw.UpdateConfig(newCfg.WatchFS)
+				// update file watcher config
+				if err := fw.UpdateConfig(newCfg.WatchFS); err != nil {
+					logg.Error("file watcher config update failed", "error", err)
+				}
+
+				// snapshot watcher: detect if restart needed
+				oldSnapCfg := sw.CurrentConfig()
 				sw.UpdateConfig(newCfg.Source)
+				if sw.NeedsRestart(oldSnapCfg, newCfg.Source) {
+					startSnapshotWatcher(ctx, sw, logg)
+				}
+
+				// worker config
 				wkr.UpdateConfig(newCfg.Destination)
+
+				// restart config watcher if its method changed
+				if newCfg.ConfigReload.Method != method {
+					method = newCfg.ConfigReload.Method
+					startWatcher(method)
+				}
 
 				logg.Info("config reloaded")
 			})

@@ -57,3 +57,10 @@ func (w *SnapshotWatcher) consumeEvents() {
 		w.detect()
 	}
 }
+
+// CurrentConfig returns a copy of the current config.
+func (w *SnapshotWatcher) CurrentConfig() Config {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.cfg
+}

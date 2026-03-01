@@ -17,6 +17,8 @@ import (
 	"github.com/raoulx24/rdb-archiver/internal/worker"
 )
 
+var snapshotCancel context.CancelFunc
+
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -26,7 +28,7 @@ func main() {
 	// Temporary fallback logger
 	stdLog := log.New(os.Stdout, "", log.LstdFlags)
 
-	// 1️⃣ Load config
+	// Load config
 	cfg, err := config.Load(configFile)
 	if err != nil {
 		stdLog.Fatalf("failed to load config: %v", err)
@@ -47,25 +49,25 @@ func main() {
 	// Mailbox for snapshotwatcher jobs
 	mb := mailbox.New[snapshot.Job]()
 
-	// Retention engine (promotion + cleanup)
+	// Retention engine
 	ret := retention.New(logg)
 
-	// FileWatcher handles fsnotify/polling + debounce.
+	// FileWatcher
 	fw, err := watchfs.New(cfg.WatchFS)
 	if err != nil {
 		panic(err)
 	}
 
-	// Worker (snapshotwatcher writer + promotion + cleanup)
+	// Worker
 	mainWorker := worker.New(
 		cfg.Destination,
 		logg,
 		ret,
 		mb,
-		nil, // fs.FS (nil = default)
+		nil,
 	)
 
-	// Watcher (detects snapshots and pushes into mailbox)
+	// Snapshot watcher
 	snapWatcher := snapshotwatcher.New(
 		cfg.Source,
 		fw,
@@ -76,17 +78,11 @@ func main() {
 	// Start worker loop
 	go mainWorker.Start(ctx)
 
-	// Start watcher loop
-	go func() {
-		err := snapWatcher.Start(ctx)
-		if err != nil {
-			logg.Error("failed to start snapshotwatcher watcher", "error", err)
-			os.Exit(1)
-		}
-	}()
+	// Start snapshot watcher (restartable)
+	startSnapshotWatcher(ctx, snapWatcher, logg)
 
+	// Config reload
 	if cfg.ConfigReload.Enabled {
-		// Start config hot‑reload watcher
 		go startConfigReload(ctx, fw, snapWatcher, mainWorker, logg, configFile, cfg.ConfigReload.Method)
 	}
 

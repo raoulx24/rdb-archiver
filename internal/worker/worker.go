@@ -1,4 +1,4 @@
-// Package worker processes snapshot jobs and writes atomic snapshot directories.
+// Package worker processes snapshotwatcher jobs and writes atomic snapshotwatcher directories.
 package worker
 
 import (
@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/raoulx24/rdb-archiver/internal/config"
 	"github.com/raoulx24/rdb-archiver/internal/fs"
 	"github.com/raoulx24/rdb-archiver/internal/logging"
 	"github.com/raoulx24/rdb-archiver/internal/mailbox"
@@ -18,21 +17,21 @@ import (
 // Worker writes snapshots into destination folders and applies retention.
 type Worker struct {
 	mu        sync.RWMutex
-	dest      config.DestinationConfig
+	cfg       Config
 	fs        fs.FS
 	log       logging.Logger
 	retention *retention.Engine
-	mb        *mailbox.Mailbox[Job]
+	mb        *mailbox.Mailbox[snapshot.Job]
 }
 
 // New creates a worker using destination config and mailbox.
-func New(dest config.DestinationConfig, log logging.Logger, r *retention.Engine, mb *mailbox.Mailbox[Job], filesystem fs.FS) *Worker {
+func New(cfg Config, log logging.Logger, r *retention.Engine, mb *mailbox.Mailbox[snapshot.Job], filesystem fs.FS) *Worker {
 	log.Debug("creating worker")
 	if filesystem == nil {
 		filesystem = fs.New()
 	}
 	return &Worker{
-		dest:      dest,
+		cfg:       cfg,
 		fs:        filesystem,
 		log:       log,
 		retention: r,
@@ -49,12 +48,12 @@ func (w *Worker) Start(ctx context.Context) {
 	for {
 		job := w.mb.Take()
 		if err := w.Handle(ctx, job.Snap); err != nil {
-			w.log.Error("worker: snapshot failed", "error", err)
+			w.log.Error("worker: snapshotwatcher failed", "error", err)
 		}
 	}
 }
 
-// Handle writes a snapshot directory and applies retention.
+// Handle writes a snapshotwatcher directory and applies retention.
 func (w *Worker) Handle(ctx context.Context, snap snapshot.Snapshot) error {
 	w.log.Debug("entering Worker.Handle()")
 	finalDir, err := w.writeSnapshot(ctx, snap)
@@ -63,7 +62,7 @@ func (w *Worker) Handle(ctx context.Context, snap snapshot.Snapshot) error {
 	}
 
 	w.mu.RLock()
-	dest := w.dest
+	dest := w.cfg
 	w.mu.RUnlock()
 
 	root := filepath.Join(dest.Root, dest.SubDir)
@@ -76,20 +75,20 @@ func (w *Worker) Handle(ctx context.Context, snap snapshot.Snapshot) error {
 	return nil
 }
 
-func (w *Worker) UpdateConfig(dest config.DestinationConfig) {
+func (w *Worker) UpdateConfig(cfg Config) {
 	w.log.Debug("entering Worker.UpdateConfig()")
 	w.mu.Lock()
-	w.dest = dest
+	w.cfg = cfg
 	w.mu.Unlock()
 
 	w.updateRetentionRules()
 }
 
-// writeSnapshot copies all snapshot files into an atomic directory.
+// writeSnapshot copies all snapshotwatcher files into an atomic directory.
 func (w *Worker) writeSnapshot(ctx context.Context, snap snapshot.Snapshot) (string, error) {
 	w.log.Debug("entering Worker.writeSnapshot()")
 	w.mu.RLock()
-	dest := w.dest
+	dest := w.cfg
 	w.mu.RUnlock()
 
 	root := filepath.Join(dest.Root, dest.SubDir)
@@ -122,13 +121,13 @@ func (w *Worker) writeSnapshot(ctx context.Context, snap snapshot.Snapshot) (str
 	// Finalize atomically
 	if err := w.fs.Rename(ctx, tmpDir, finalDir); err != nil {
 		_ = w.fs.RemoveAll(tmpDir)
-		return "", fmt.Errorf("finalizing snapshot: %w", err)
+		return "", fmt.Errorf("finalizing snapshotwatcher: %w", err)
 	}
 
 	return finalDir, nil
 }
 
-// copyArtifact copies one file into the snapshot directory.
+// copyArtifact copies one file into the snapshotwatcher directory.
 func (w *Worker) copyArtifact(ctx context.Context, a snapshot.Artifact, srcDir string, dstDir string) error {
 	src := filepath.Join(srcDir, a.Name)
 	dst := filepath.Join(dstDir, a.Name)
@@ -139,17 +138,17 @@ func (w *Worker) copyArtifact(ctx context.Context, a snapshot.Artifact, srcDir s
 	return nil
 }
 
-// updateRetentionRules adds to the retention rules the snapshot one
+// updateRetentionRules adds to the retention rules the snapshotwatcher one
 func (w *Worker) updateRetentionRules() {
 	w.log.Debug("entering Worker.updateRetentionRules")
 	w.mu.RLock()
-	mainRule := config.RetentionRule{
-		Name:  w.dest.SnapshotSubdir,
+	mainRule := retention.RetentionRule{
+		Name:  w.cfg.SnapshotSubdir,
 		Cron:  "",
-		Count: w.dest.Retention.LastCount,
+		Count: w.cfg.Retention.LastCount,
 	}
 
-	updated := append([]config.RetentionRule{mainRule}, w.dest.Retention.Rules...)
+	updated := append([]retention.RetentionRule{mainRule}, w.cfg.Retention.Rules...)
 	w.retention.UpdateConfig(updated)
 	w.mu.RUnlock()
 }

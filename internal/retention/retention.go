@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/raoulx24/rdb-archiver/internal/config"
 	"github.com/raoulx24/rdb-archiver/internal/logging"
 	"github.com/robfig/cron/v3"
 )
@@ -20,34 +19,40 @@ import (
 // Engine manages promotion and cleanup rules.
 type Engine struct {
 	mu    sync.RWMutex
-	rules []config.RetentionRule
+	rules []RetentionRule
 	log   logging.Logger
+}
+
+type RetentionRule struct {
+	Name  string `yaml:"name"`
+	Cron  string `yaml:"cron"`
+	Count int    `yaml:"count"`
 }
 
 // New creates a retention engine from config.
 func New(log logging.Logger) *Engine {
 	return &Engine{
-		rules: []config.RetentionRule{},
+		rules: []RetentionRule{},
 		log:   log,
 	}
 }
 
 // UpdateConfig hot‑reloads retention rules.
-func (e *Engine) UpdateConfig(rules []config.RetentionRule) {
+func (e *Engine) UpdateConfig(rules []RetentionRule) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.rules = rules
 }
 
-// Apply promotes the new snapshot and prunes old ones.
+// Apply promotes the new snapshotwatcher and prunes old ones.
 func (e *Engine) Apply(ctx context.Context, archiveRoot, newSnapshotDir string) error {
 	e.mu.RLock()
-	rules := append([]config.RetentionRule(nil), e.rules...)
+	rules := append([]RetentionRule(nil), e.rules...)
 	e.mu.RUnlock()
 
 	ts, err := parseTimestamp(filepath.Base(newSnapshotDir))
 	if err != nil {
-		return fmt.Errorf("invalid snapshot timestamp: %w", err)
+		return fmt.Errorf("invalid snapshotwatcher timestamp: %w", err)
 	}
 
 	for _, rule := range rules {
@@ -67,8 +72,8 @@ func (e *Engine) Apply(ctx context.Context, archiveRoot, newSnapshotDir string) 
 	return nil
 }
 
-// promote copies the snapshot if none exists after the cron boundary.
-func (e *Engine) promote(rule config.RetentionRule, ruleDir, snapDir string, snapTS time.Time) error {
+// promote copies the snapshotwatcher if none exists after the cron boundary.
+func (e *Engine) promote(rule RetentionRule, ruleDir, snapDir string, snapTS time.Time) error {
 	sched, err := cron.ParseStandard(rule.Cron)
 	if err != nil {
 		return fmt.Errorf("invalid cron %q: %w", rule.Cron, err)
@@ -82,7 +87,7 @@ func (e *Engine) promote(rule config.RetentionRule, ruleDir, snapDir string, sna
 		return fmt.Errorf("mkdir: %w", err)
 	}
 
-	// Check if a snapshot already exists after boundary.
+	// Check if a snapshotwatcher already exists after boundary.
 	existing, err := listSnapshotDirs(ruleDir)
 	if err != nil {
 		return err
@@ -98,8 +103,8 @@ func (e *Engine) promote(rule config.RetentionRule, ruleDir, snapDir string, sna
 	return copyDir(snapDir, dst)
 }
 
-// cleanup keeps only the newest N snapshot directories.
-func (e *Engine) cleanup(rule config.RetentionRule, ruleDir string) error {
+// cleanup keeps only the newest N snapshotwatcher directories.
+func (e *Engine) cleanup(rule RetentionRule, ruleDir string) error {
 	entries, err := os.ReadDir(ruleDir)
 	if err != nil {
 		return fmt.Errorf("reading folder: %w", err)
@@ -127,7 +132,7 @@ func (e *Engine) cleanup(rule config.RetentionRule, ruleDir string) error {
 	return nil
 }
 
-// listSnapshotDirs returns timestamps of snapshot directories.
+// listSnapshotDirs returns timestamps of snapshotwatcher directories.
 func listSnapshotDirs(dir string) ([]time.Time, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -147,12 +152,12 @@ func listSnapshotDirs(dir string) ([]time.Time, error) {
 	return out, nil
 }
 
-// parseTimestamp parses snapshot directory names.
+// parseTimestamp parses snapshotwatcher directory names.
 func parseTimestamp(name string) (time.Time, error) {
 	return time.Parse("2006-01-02T15-04-05", name)
 }
 
-// copyDir copies a snapshot directory recursively.
+// copyDir copies a snapshotwatcher directory recursively.
 func copyDir(src, dst string) error {
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		return err

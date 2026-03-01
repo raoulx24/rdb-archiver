@@ -5,16 +5,15 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
-	"time"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/raoulx24/rdb-archiver/internal/config"
 	"github.com/raoulx24/rdb-archiver/internal/logging"
 	"github.com/raoulx24/rdb-archiver/internal/mailbox"
 	"github.com/raoulx24/rdb-archiver/internal/retention"
-	"github.com/raoulx24/rdb-archiver/internal/watcher"
+	"github.com/raoulx24/rdb-archiver/internal/snapshot"
+	"github.com/raoulx24/rdb-archiver/internal/snapshotwatcher"
+	"github.com/raoulx24/rdb-archiver/internal/watchfs"
 	"github.com/raoulx24/rdb-archiver/internal/worker"
 )
 
@@ -34,7 +33,7 @@ func main() {
 	}
 
 	// Logger
-	logg := logging.NewSlogLogger(cfg.Logging.Level, cfg.Logging.Format)
+	logg := logging.NewSlogLogger(cfg.Logging)
 
 	// Graceful shutdown
 	go func(logg logging.Logger) {
@@ -45,13 +44,19 @@ func main() {
 		cancel()
 	}(logg)
 
-	// Mailbox for snapshot jobs
-	mb := mailbox.New[worker.Job]()
+	// Mailbox for snapshotwatcher jobs
+	mb := mailbox.New[snapshot.Job]()
 
 	// Retention engine (promotion + cleanup)
 	ret := retention.New(logg)
 
-	// Worker (snapshot writer + promotion + cleanup)
+	// FileWatcher handles fsnotify/polling + debounce.
+	fw, err := watchfs.New(cfg.WatchFS)
+	if err != nil {
+		panic(err)
+	}
+
+	// Worker (snapshotwatcher writer + promotion + cleanup)
 	mainWorker := worker.New(
 		cfg.Destination,
 		logg,
@@ -61,10 +66,11 @@ func main() {
 	)
 
 	// Watcher (detects snapshots and pushes into mailbox)
-	watch := watcher.New(
+	snapWatcher := snapshotwatcher.New(
 		cfg.Source,
-		logg,
+		fw,
 		mb,
+		logg,
 	)
 
 	// Start worker loop
@@ -72,85 +78,15 @@ func main() {
 
 	// Start watcher loop
 	go func() {
-		err := watch.Start(ctx)
+		err := snapWatcher.Start(ctx)
 		if err != nil {
-			logg.Error("failed to start watcher", "error", err)
+			logg.Error("failed to start snapshotwatcher watcher", "error", err)
 			os.Exit(1)
 		}
 	}()
 
-	// Hot reload on config.yaml change
-	go func() {
-		dir := filepath.Dir(configFile)
-		base := filepath.Base(configFile)
-
-		configWatcher, err := fsnotify.NewWatcher()
-		if err != nil {
-			logg.Error("failed to create configWatcher", "error", err)
-			os.Exit(1)
-		}
-		defer configWatcher.Close()
-
-		if err := configWatcher.Add(dir); err != nil {
-			logg.Error("failed to watch config directory", "error", err, "dir", dir)
-			os.Exit(1)
-		}
-
-		// Debounce channel
-		resetCh := make(chan struct{}, 1)
-
-		// Debounce goroutine
-		go func() {
-			var t *time.Timer
-			for range resetCh {
-				if t != nil {
-					t.Stop()
-				}
-				t = time.AfterFunc(300*time.Millisecond, func() {
-					logg.Debug("reloading config file")
-
-					newCfg, err := config.Load(configFile)
-					if err != nil {
-						logg.Error("config reload failed", "error", err, "configFile", configFile)
-						return
-					}
-
-					mainWorker.UpdateConfig(newCfg.Destination)
-					watch.UpdateConfig(newCfg.Source)
-
-					logg.Info("config reloaded")
-				})
-			}
-		}()
-
-		for {
-			select {
-			case ev, ok := <-configWatcher.Events:
-				if !ok {
-					return
-				}
-
-				// Only react to the file we care about
-				if filepath.Base(ev.Name) != base {
-					continue
-				}
-
-				// React to CREATE, WRITE, RENAME (covers ConfigMap updates)
-				if ev.Op&(fsnotify.Create|fsnotify.Write|fsnotify.Rename) == 0 {
-					continue
-				}
-
-				// Trigger debounce
-				select {
-				case resetCh <- struct{}{}:
-				default:
-				}
-
-			case err := <-configWatcher.Errors:
-				logg.Error("configWatcher error", "error", err)
-			}
-		}
-	}()
+	// Start config hot‑reload watcher
+	go startConfigReload(ctx, fw, snapWatcher, mainWorker, logg)
 
 	<-ctx.Done()
 	stdLog.Println("exit complete")

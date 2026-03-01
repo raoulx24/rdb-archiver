@@ -44,7 +44,7 @@ Right now, the worker silently copies files.
 Add:
 
 ```go
-w.log.Info("snapshot archived", "path", finalPath)
+w.log.Info("snapshotwatcher archived", "path", finalPath)
 ```
 This helps debugging and observability.
 

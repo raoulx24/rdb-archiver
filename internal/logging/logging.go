@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 )
 
 // Logger defines the logging interface used across the application.
@@ -17,14 +18,53 @@ type Logger interface {
 
 // SlogLogger implements Logger using Go 1.21+ slog for structured logging.
 type SlogLogger struct {
+	mu     sync.RWMutex
 	logger *slog.Logger
 }
 
 // NewSlogLogger creates a new SlogLogger with specified level and JSON/text output.
-func NewSlogLogger(level string, format string) *SlogLogger {
+func NewSlogLogger(cfg Config) *SlogLogger {
+	l := &SlogLogger{}
+	l.applyConfig(cfg)
+	return l
+}
+
+// UpdateConfig rebuilds the logger with new level/format settings.
+func (l *SlogLogger) UpdateConfig(cfg Config) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.applyConfig(cfg)
+}
+
+// Debug logs a debug message with optional key/value fields.
+func (l *SlogLogger) Debug(msg string, args ...any) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	l.logger.Debug(msg, args...)
+}
+
+func (l *SlogLogger) Info(msg string, args ...any) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	l.logger.Info(msg, args...)
+}
+
+func (l *SlogLogger) Warn(msg string, args ...any) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	l.logger.Warn(msg, args...)
+}
+
+func (l *SlogLogger) Error(msg string, args ...any) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	l.logger.Error(msg, args...)
+}
+
+func (l *SlogLogger) applyConfig(cfg Config) {
 	var lvl slog.Level
 
-	switch level {
+	switch cfg.Level {
 	case "debug":
 		lvl = slog.LevelDebug
 	case "warn":
@@ -40,48 +80,25 @@ func NewSlogLogger(level string, format string) *SlogLogger {
 	}
 
 	var handler slog.Handler
-	switch format {
+	switch cfg.Format {
 	case "json":
 		handler = slog.NewJSONHandler(os.Stdout, opts)
+
 	case "text":
-		// Custom text handler with level prefixes
 		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 			Level:     lvl,
 			AddSource: false,
 			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 				if a.Key == slog.LevelKey {
-					// wrap the string in slog.Value
 					a.Value = slog.StringValue(fmt.Sprintf("[%s]", a.Value.String()))
 				}
 				return a
 			},
 		})
+
 	default:
-		// fallback to text
 		handler = slog.NewTextHandler(os.Stdout, opts)
 	}
 
-	return &SlogLogger{
-		logger: slog.New(handler),
-	}
-}
-
-// Debug logs a debug message with optional key/value fields.
-func (l *SlogLogger) Debug(msg string, args ...any) {
-	l.logger.Debug(msg, args...)
-}
-
-// Info logs an informational message with optional key/value fields.
-func (l *SlogLogger) Info(msg string, args ...any) {
-	l.logger.Info(msg, args...)
-}
-
-// Warn logs a warning message with optional key/value fields.
-func (l *SlogLogger) Warn(msg string, args ...any) {
-	l.logger.Warn(msg, args...)
-}
-
-// Error logs an error message with optional key/value fields.
-func (l *SlogLogger) Error(msg string, args ...any) {
-	l.logger.Error(msg, args...)
+	l.logger = slog.New(handler)
 }

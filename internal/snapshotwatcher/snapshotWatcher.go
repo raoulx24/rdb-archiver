@@ -2,45 +2,83 @@
 package snapshotwatcher
 
 import (
+	"context"
 	"sync"
 	"time"
 
-	"github.com/raoulx24/rdb-archiver/internal/config"
+	"github.com/raoulx24/rdb-archiver/internal/fsprobe"
 	"github.com/raoulx24/rdb-archiver/internal/logging"
 	"github.com/raoulx24/rdb-archiver/internal/mailbox"
+	"github.com/raoulx24/rdb-archiver/internal/snapshot"
 	"github.com/raoulx24/rdb-archiver/internal/watchfs"
 )
 
 type SnapshotWatcher struct {
 	mu          sync.RWMutex
-	dir         string
-	primaryName string
-	auxNames    []string
+	cfg         Config
 	lastModTime time.Time
-
 	events      chan struct{}
 	fileWatch   *watchfs.FileWatcher
-	mb          *mailbox.Mailbox[Job]
+	mb          *mailbox.Mailbox[snapshot.Job]
 	log         logging.Logger
-	useFsNotify bool
 }
 
-// New creates a snapshot watcher with initial config.
+// New creates a snapshotwatcher watcher with initial config.
 func New(
-	cfg config.SourceConfig,
+	cfg Config,
 	fw *watchfs.FileWatcher,
-	mb *mailbox.Mailbox[Job],
+	mb *mailbox.Mailbox[snapshot.Job],
 	log logging.Logger,
-	useFsNotify bool,
 ) *SnapshotWatcher {
 	return &SnapshotWatcher{
-		dir:         cfg.Path,
-		primaryName: cfg.PrimaryName,
-		auxNames:    cfg.AuxNames,
-		fileWatch:   fw,
-		mb:          mb,
-		log:         log,
-		useFsNotify: useFsNotify,
-		events:      make(chan struct{}), // unbuffered
+		cfg:       cfg,
+		fileWatch: fw,
+		mb:        mb,
+		log:       log,
+		events:    make(chan struct{}), // unbuffered
+	}
+}
+
+// Start begins watching using fsnotify or polling.
+func (w *SnapshotWatcher) Start(ctx context.Context) error {
+	go w.consumeEvents()
+
+	w.mu.RLock()
+	mode := w.cfg.WatchMode
+	w.mu.RUnlock()
+
+	// Decide watch mode.
+	switch mode {
+	case "fsnotify":
+		// Always use fsnotify, no probing.
+		return w.fileWatch.WatchFsNotify(ctx, w.cfg.Path, w.cfg.PrimaryName, w.events)
+
+	case "poll":
+		// Always use polling.
+		return w.fileWatch.WatchPolling(ctx, w.events)
+
+	case "auto":
+		// Probe whether fsnotify works reliably.
+		res := fsprobe.Probe(w.cfg.Path)
+		if res.FsnotifySupported {
+			w.log.Debug("fsnotify supported", "dir", w.cfg.Path)
+			return w.fileWatch.WatchFsNotify(ctx, w.cfg.Path, w.cfg.PrimaryName, w.events)
+		}
+
+		// Fallback to polling.
+		w.log.Error("fsnotify disabled, falling back to polling", "reason", res.Reason)
+		return w.fileWatch.WatchPolling(ctx, w.events)
+
+	default:
+		// Unknown mode → safe fallback.
+		w.log.Error("invalid watch mode, using polling", "mode", mode)
+		return w.fileWatch.WatchPolling(ctx, w.events)
+	}
+}
+
+// consumeEvents runs detect() for each incoming signal.
+func (w *SnapshotWatcher) consumeEvents() {
+	for range w.events {
+		w.detect()
 	}
 }

@@ -37,3 +37,12 @@ func Load(path string) (*Config, error) {
 
 	return &cfg, nil
 }
+
+func applyDefaults(cfg *Config) {
+	if cfg.Server == nil {
+		cfg.Server = &ServerConfig{}
+	}
+	if cfg.Server.Port == 0 {
+		cfg.Server.Port = 8080
+	}
+}

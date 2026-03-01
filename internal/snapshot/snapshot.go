@@ -1,4 +1,4 @@
-package snapshotwatcher
+package snapshot
 
 import (
 	"os"
@@ -6,19 +6,19 @@ import (
 	"time"
 )
 
-// Snapshot represents a single archived snapshotwatcher file.
+// Snapshot represents a single archived snapshot file.
 type Snapshot struct {
 	Dir     string
 	Primary Artifact
 	Aux     []Artifact
 }
 
-// Job wraps a snapshotwatcher for mailbox delivery.
+// Job wraps a snapshot for mailbox delivery.
 type Job struct {
 	Snap Snapshot
 }
 
-// Artifact describes a single file within a snapshotwatcher
+// Artifact describes a single file within a snapshot
 type Artifact struct {
 	Name    string
 	Size    int64

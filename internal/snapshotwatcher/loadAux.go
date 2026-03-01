@@ -1,27 +1,24 @@
-﻿package snapshot
+﻿package snapshotwatcher
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/raoulx24/rdb-archiver/internal/snapshot"
 )
 
-// loadAux loads auxiliary files associated with the primary file.
-func (w *Watcher) loadAux(dir string, auxNames []string) []Artifact {
-	var auxArtifacts []Artifact
+// loadAux loads auxiliary artifacts if present.
+func (w *SnapshotWatcher) loadAux(dir string, names []string) []snapshot.Artifact {
+	var out []snapshot.Artifact
 
-	for _, auxName := range auxNames {
-		auxPath := filepath.Join(dir, auxName)
-
-		info, err := os.Stat(auxPath)
+	for _, name := range names {
+		path := filepath.Join(dir, name)
+		info, err := os.Stat(path)
 		if err != nil {
-			fmt.Printf("Error loading aux file %s: %v\n", auxPath, err)
 			continue
 		}
-
-		auxArtifact := FromFileInfo(auxPath, info)
-		auxArtifacts = append(auxArtifacts, auxArtifact)
+		out = append(out, snapshot.FromFileInfo(path, info))
 	}
 
-	return auxArtifacts
+	return out
 }

@@ -3,11 +3,7 @@
   primaryName: "dump.rdb"
   auxNames:
   - "nodes.conf"
-  watch:
-    mode: "fsnotify"          # auto | poll | fsnotify
-    pollInterval: "5s"        # time.Duration
-    debounceWindow: "200ms"  # time.Duration
-    stabilityWindow: "200ms"
+  watchMode: "fsnotify"          # auto | poll | fsnotify
 
 destination:
   root: "/tmp/rdb-archive/dest"
@@ -22,6 +18,13 @@ destination:
     - name: "weekly"
       cron: "0 0 * * 0"
       count: 4
+
+watchFS:
+  fsnotify:
+    debounceWindow: "200ms"
+  pool:
+    interval: "5s"
+  stabilityWindow: "200ms"
 
 logging:
   level: "debug"    # info | debug | warn | error

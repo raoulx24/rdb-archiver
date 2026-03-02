@@ -4,6 +4,7 @@ package fs
 
 import (
 	"context"
+	"os"
 	"time"
 )
 
@@ -20,4 +21,6 @@ type FS interface {
 	Rename(ctx context.Context, oldPath, newPath string) error
 	MkdirAll(path string) error
 	RemoveAll(path string) error
+	ReadDir(path string) ([]os.DirEntry, error)
+	CopyDir(ctx context.Context, src, dst string) error
 }

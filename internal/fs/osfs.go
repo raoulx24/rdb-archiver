@@ -1,4 +1,4 @@
-﻿package fs
+package fs
 
 import (
 	"context"
@@ -28,9 +28,7 @@ func (o *OSFS) Stat(path string) (FileInfo, error) {
 	}, nil
 }
 
-func (o *OSFS) MkdirAll(path string) error {
-	return os.MkdirAll(path, 0o755)
-}
+func (o *OSFS) MkdirAll(path string) error { return os.MkdirAll(path, 0o755) }
 
 func (o *OSFS) RemoveAll(path string) error {
 	return os.RemoveAll(path)
@@ -42,4 +40,10 @@ func (o *OSFS) CopyFile(ctx context.Context, src, dst string) error {
 
 func (o *OSFS) Rename(ctx context.Context, oldPath, newPath string) error {
 	return renameWithRetry(ctx, oldPath, newPath)
+}
+
+func (o *OSFS) ReadDir(path string) ([]os.DirEntry, error) { return os.ReadDir(path) }
+
+func (o *OSFS) CopyDir(ctx context.Context, src, dst string) error {
+	return copyDirWithRetry(ctx, o, src, dst)
 }

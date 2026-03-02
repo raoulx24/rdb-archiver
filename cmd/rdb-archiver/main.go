@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/raoulx24/rdb-archiver/internal/config"
+	"github.com/raoulx24/rdb-archiver/internal/fs"
 	"github.com/raoulx24/rdb-archiver/internal/logging"
 	"github.com/raoulx24/rdb-archiver/internal/mailbox"
 	"github.com/raoulx24/rdb-archiver/internal/retention"
@@ -46,6 +47,9 @@ func main() {
 		cancel()
 	}(logg)
 
+	// OSFS
+	osfs := fs.New()
+
 	// Mailbox for snapshotwatcher jobs
 	mb := mailbox.New[snapshot.Job]()
 
@@ -64,7 +68,7 @@ func main() {
 		logg,
 		ret,
 		mb,
-		nil,
+		osfs,
 	)
 
 	// Snapshot watcher

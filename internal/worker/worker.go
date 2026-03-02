@@ -27,9 +27,6 @@ type Worker struct {
 // New creates a worker using destination config and mailbox.
 func New(cfg Config, log logging.Logger, r *retention.Engine, mb *mailbox.Mailbox[snapshot.Job], filesystem fs.FS) *Worker {
 	log.Debug("creating worker")
-	if filesystem == nil {
-		filesystem = fs.New()
-	}
 	return &Worker{
 		cfg:       cfg,
 		fs:        filesystem,
@@ -68,7 +65,7 @@ func (w *Worker) Handle(ctx context.Context, snap snapshot.Snapshot) error {
 	root := filepath.Join(dest.Root, dest.SubDir)
 	w.log.Debug("destination root resolved", "root", root)
 
-	if err := w.retention.Apply(ctx, root, finalDir); err != nil {
+	if err := w.retention.Apply(ctx, w.fs, root, finalDir); err != nil {
 		w.log.Error("worker: retention failed", "error", err)
 	}
 

@@ -1,4 +1,4 @@
-﻿package fs
+package fs
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"os"
 )
 
-// implements file copying with retry and source-change detection.
+// implements file and directory copying with retry and source-change detection.
 // It ensures that snapshotwatcher copies are consistent and aborts if the source file changes mid-copy.
 
 func copyWithRetry(ctx context.Context, f FS, src, dst string) error {

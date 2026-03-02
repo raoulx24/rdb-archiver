@@ -13,7 +13,7 @@ destination:
     lastCount: 5
     removeUnknownFolders: true
     rules:
-    - name: "dailya"
+    - name: "daily"
       cron: "0 0 * * *"
       count: 7
     - name: "weekly"

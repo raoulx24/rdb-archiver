@@ -27,6 +27,11 @@ watchFS:
     interval: "5s"
   stabilityWindow: "200ms"
 
+fs:
+  maxRetries: 7
+  retryBase: "50ms"
+  retryDurationCap: "1s"
+
 logging:
   level: "debug"    # info | debug | warn | error
   format: "json"    # json | text

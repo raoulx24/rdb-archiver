@@ -10,13 +10,13 @@ import (
 // implements file and directory copying with retry and source-change detection.
 // It ensures that snapshotwatcher copies are consistent and aborts if the source file changes mid-copy.
 
-func copyWithRetry(ctx context.Context, f FS, src, dst string) error {
+func copyWithRetry(ctx context.Context, f FS, cfg Config, src, dst string) error {
 	orig, err := f.Stat(src)
 	if err != nil {
 		return err
 	}
 
-	return retry(ctx, "copy", func() error {
+	return retry(ctx, cfg, Operation{Name: "copy"}, func() error {
 		now, err := f.Stat(src)
 		if err != nil {
 			return err

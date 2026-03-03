@@ -8,8 +8,8 @@ import (
 // wraps os.Rename with retry logic.
 // It provides a resilient, atomic rename operation for snapshotwatcher finalization.
 
-func renameWithRetry(ctx context.Context, oldPath, newPath string) error {
-	return retry(ctx, "rename", func() error {
+func renameWithRetry(ctx context.Context, cfg Config, oldPath, newPath string) error {
+	return retry(ctx, cfg, Operation{Name: "rename"}, func() error {
 		return os.Rename(oldPath, newPath)
 	})
 }

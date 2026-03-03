@@ -3,15 +3,19 @@ package fs
 import (
 	"context"
 	"os"
+	"sync"
 )
 
-type OSFS struct{}
+type OSFS struct {
+	cfg Config
+	mu  sync.RWMutex
+}
 
 // the concrete implementation of FS backed by the local OS filesystem.
 // Platform-specific details (such as inode extraction) are handled in build-tagged files.
 
-func New() *OSFS {
-	return &OSFS{}
+func New(config Config) *OSFS {
+	return &OSFS{cfg: config}
 }
 
 func (o *OSFS) Stat(path string) (FileInfo, error) {
@@ -35,15 +39,30 @@ func (o *OSFS) RemoveAll(path string) error {
 }
 
 func (o *OSFS) CopyFile(ctx context.Context, src, dst string) error {
-	return copyWithRetry(ctx, o, src, dst)
+	o.mu.RLock()
+	cfg := o.cfg
+	o.mu.RUnlock()
+	return copyWithRetry(ctx, o, cfg, src, dst)
 }
 
 func (o *OSFS) Rename(ctx context.Context, oldPath, newPath string) error {
-	return renameWithRetry(ctx, oldPath, newPath)
+	o.mu.RLock()
+	cfg := o.cfg
+	o.mu.RUnlock()
+	return renameWithRetry(ctx, cfg, oldPath, newPath)
 }
 
 func (o *OSFS) ReadDir(path string) ([]os.DirEntry, error) { return os.ReadDir(path) }
 
 func (o *OSFS) CopyDir(ctx context.Context, src, dst string) error {
-	return copyDirWithRetry(ctx, o, src, dst)
+	o.mu.RLock()
+	cfg := o.cfg
+	o.mu.RUnlock()
+	return copyDirWithRetry(ctx, o, cfg, src, dst)
+}
+
+func (o *OSFS) UpdateConfig(cfg Config) {
+	o.mu.Lock()
+	o.cfg = cfg
+	o.mu.Unlock()
 }

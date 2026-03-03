@@ -48,7 +48,7 @@ func main() {
 	}(logg)
 
 	// OSFS
-	osfs := fs.New()
+	osfs := fs.New(cfg.FS)
 
 	// Mailbox for snapshotwatcher jobs
 	mb := mailbox.New[snapshot.Job]()
@@ -87,7 +87,7 @@ func main() {
 
 	// Config reload
 	if cfg.ConfigReload.Enabled {
-		go startConfigReload(ctx, fw, snapWatcher, mainWorker, logg, configFile, cfg.ConfigReload.Method)
+		go startConfigReload(ctx, fw, snapWatcher, mainWorker, osfs, logg, configFile, cfg.ConfigReload.Method)
 	}
 
 	<-ctx.Done()
@@ -117,6 +117,7 @@ func startConfigReload(
 	fw *watchfs.FileWatcher,
 	sw *snapshotwatcher.SnapshotWatcher,
 	wkr *worker.Worker,
+	osfs *fs.OSFS,
 	logg logging.Logger,
 	configFile string,
 	method string,
@@ -186,6 +187,9 @@ func startConfigReload(
 					method = newCfg.ConfigReload.Method
 					startWatcher(method)
 				}
+
+				// filesystem
+				osfs.UpdateConfig(newCfg.FS)
 
 				logg.Info("config reloaded")
 			})

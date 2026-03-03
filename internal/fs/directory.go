@@ -6,7 +6,7 @@ import (
 )
 
 // copyDirWithRetry copies a snapshotwatcher directory recursively.
-func copyDirWithRetry(ctx context.Context, f FS, src, dst string) error {
+func copyDirWithRetry(ctx context.Context, f FS, cfg Config, src, dst string) error {
 	if err := f.MkdirAll(dst); err != nil {
 		return err
 	}
@@ -21,13 +21,13 @@ func copyDirWithRetry(ctx context.Context, f FS, src, dst string) error {
 		d := filepath.Join(dst, ent.Name())
 
 		if ent.IsDir() {
-			if err := copyDirWithRetry(ctx, f, s, d); err != nil {
+			if err := copyDirWithRetry(ctx, f, cfg, s, d); err != nil {
 				return err
 			}
 			continue
 		}
 
-		if err := copyWithRetry(ctx, f, s, d); err != nil {
+		if err := copyWithRetry(ctx, f, cfg, s, d); err != nil {
 			return err
 		}
 	}

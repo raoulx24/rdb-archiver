@@ -8,7 +8,7 @@ import (
 )
 
 // loadAux loads auxiliary artifacts if present.
-func (w *SnapshotWatcher) loadAux(dir string, names []string) []snapshot.Artifact {
+func (sw *SnapshotWatcher) loadAux(dir string, names []string) []snapshot.Artifact {
 	var out []snapshot.Artifact
 
 	for _, name := range names {

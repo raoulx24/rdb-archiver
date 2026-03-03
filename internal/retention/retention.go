@@ -15,12 +15,12 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-// Engine manages promotion and cleanup rules.
-type Engine struct {
-	mu  sync.RWMutex
-	fs  fs.FS
-	cfg Config
-	log logging.Logger
+// Retention manages promotion and cleanup rules.
+type Retention struct {
+	mu   sync.RWMutex
+	fs   fs.FS
+	cfg  Config
+	logg logging.Logger
 }
 
 type Rule struct {
@@ -30,27 +30,28 @@ type Rule struct {
 }
 
 // New creates a retention engine from cfg.
-func New(log logging.Logger) *Engine {
-	return &Engine{
-		cfg: Config{},
-		log: log,
+func New(logg logging.Logger) *Retention {
+	return &Retention{
+		cfg:  Config{},
+		logg: logg,
 	}
 }
 
 // UpdateConfig hot‑reloads retention rules.
-func (e *Engine) UpdateConfig(config Config) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.cfg = config
+func (r *Retention) UpdateConfig(config Config) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.cfg = config
 }
 
 // Apply promotes the new snapshotwatcher and prunes old ones.
-func (e *Engine) Apply(ctx context.Context, filesystem fs.FS, archiveRoot, newSnapshotDir string) error {
-	e.fs = filesystem
-	e.mu.RLock()
-	rules := append([]Rule(nil), e.cfg.Rules...)
-	removeUnknownFolders := e.cfg.RemoveUnknownFolders
-	e.mu.RUnlock()
+func (r *Retention) Apply(ctx context.Context, filesystem fs.FS, archiveRoot, newSnapshotDir string) error {
+	r.logg.Info("retention engine is starting to apply rules")
+	r.fs = filesystem
+	r.mu.RLock()
+	rules := append([]Rule(nil), r.cfg.Rules...)
+	removeUnknownFolders := r.cfg.RemoveUnknownFolders
+	r.mu.RUnlock()
 
 	ts, err := parseTimestamp(filepath.Base(newSnapshotDir))
 	if err != nil {
@@ -61,19 +62,19 @@ func (e *Engine) Apply(ctx context.Context, filesystem fs.FS, archiveRoot, newSn
 		ruleDir := filepath.Join(archiveRoot, rule.Name)
 
 		if strings.TrimSpace(rule.Cron) != "" {
-			if err := e.promote(ctx, rule, ruleDir, newSnapshotDir, ts); err != nil {
-				e.log.Error("promote failed", "goPackage", "retention", "ruleName", rule.Name, "error", err)
+			if err := r.promote(ctx, rule, ruleDir, newSnapshotDir, ts); err != nil {
+				r.logg.Error("promote failed", "goPackage", "retention", "ruleName", rule.Name, "error", err)
 			}
 		}
 
-		if err := e.cleanup(rule, ruleDir); err != nil {
-			e.log.Error("retention - cleanup %s failed", "goPackage", "retention", "ruleName", rule.Name, "error", err)
+		if err := r.cleanup(rule, ruleDir); err != nil {
+			r.logg.Error("retention - cleanup %s failed", "goPackage", "retention", "ruleName", rule.Name, "error", err)
 		}
 	}
 
 	if removeUnknownFolders {
-		if err := e.removeUnknownFolders(rules, archiveRoot); err != nil {
-			e.log.Error("retention - remove unknown folders failed", "goPackage", "retention", "error", err)
+		if err := r.removeUnknownFolders(rules, archiveRoot); err != nil {
+			r.logg.Error("retention - remove unknown folders failed", "goPackage", "retention", "error", err)
 		}
 	}
 
@@ -81,7 +82,7 @@ func (e *Engine) Apply(ctx context.Context, filesystem fs.FS, archiveRoot, newSn
 }
 
 // promote copies the snapshotwatcher if none exists after the cron boundary.
-func (e *Engine) promote(ctx context.Context, rule Rule, ruleDir, snapDir string, snapTS time.Time) error {
+func (r *Retention) promote(ctx context.Context, rule Rule, ruleDir, snapDir string, snapTS time.Time) error {
 	sched, err := cron.ParseStandard(rule.Cron)
 	if err != nil {
 		return fmt.Errorf("invalid cron %q: %w", rule.Cron, err)
@@ -92,12 +93,12 @@ func (e *Engine) promote(ctx context.Context, rule Rule, ruleDir, snapDir string
 	next := sched.Next(prev)
 
 	// Ensure folder exists.
-	if err := e.fs.MkdirAll(ruleDir); err != nil {
+	if err := r.fs.MkdirAll(ruleDir); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
 
 	// Check if a snapshotwatcher already exists after boundary.
-	existing, err := e.listSnapshotDirs(ruleDir)
+	existing, err := r.listSnapshotDirs(ruleDir)
 	if err != nil {
 		return err
 	}
@@ -111,12 +112,13 @@ func (e *Engine) promote(ctx context.Context, rule Rule, ruleDir, snapDir string
 
 	// Promote by copying the directory.
 	dst := filepath.Join(ruleDir, filepath.Base(snapDir))
-	return e.fs.CopyDir(ctx, snapDir, dst)
+	r.logg.Info("creating snapshot in cron folder", "rule", rule.Name, "cron", rule.Cron, "snapshot", filepath.Base(snapDir))
+	return r.fs.CopyDir(ctx, snapDir, dst)
 }
 
 // cleanup keeps only the newest N snapshotwatcher directories.
-func (e *Engine) cleanup(rule Rule, ruleDir string) error {
-	entries, err := e.fs.ReadDir(ruleDir)
+func (r *Retention) cleanup(rule Rule, ruleDir string) error {
+	entries, err := r.fs.ReadDir(ruleDir)
 	if err != nil {
 		return fmt.Errorf("reading folder: %w", err)
 	}
@@ -137,20 +139,21 @@ func (e *Engine) cleanup(rule Rule, ruleDir string) error {
 	})
 
 	for _, name := range dirs[rule.Count:] {
-		_ = e.fs.RemoveAll(filepath.Join(ruleDir, name))
+		r.logg.Info("removing old snapshot in cron folder", "rule", rule.Name, "cron", rule.Cron, "snapshot", name)
+		_ = r.fs.RemoveAll(filepath.Join(ruleDir, name))
 	}
 
 	return nil
 }
 
 // removeUnknownFolders removes folders that are not defined in the retention rules.
-func (e *Engine) removeUnknownFolders(rules []Rule, ruleDir string) error {
+func (r *Retention) removeUnknownFolders(rules []Rule, ruleDir string) error {
 	known := make(map[string]struct{})
 	for _, r := range rules {
 		known[r.Name] = struct{}{}
 	}
 
-	entries, err := e.fs.ReadDir(ruleDir)
+	entries, err := r.fs.ReadDir(ruleDir)
 	if err != nil {
 		return err
 	}
@@ -164,8 +167,8 @@ func (e *Engine) removeUnknownFolders(rules []Rule, ruleDir string) error {
 
 		if _, ok := known[name]; !ok {
 			full := filepath.Join(ruleDir, name)
-			e.log.Warn("Removing unknown folder", "path", full)
-			if err := e.fs.RemoveAll(full); err != nil {
+			r.logg.Warn("Removing unknown cron folder", "path", full)
+			if err := r.fs.RemoveAll(full); err != nil {
 				return fmt.Errorf("removing dir %s: %w", full, err)
 			}
 		}
@@ -175,8 +178,8 @@ func (e *Engine) removeUnknownFolders(rules []Rule, ruleDir string) error {
 }
 
 // listSnapshotDirs returns timestamps of snapshotwatcher directories.
-func (e *Engine) listSnapshotDirs(dir string) ([]time.Time, error) {
-	entries, err := e.fs.ReadDir(dir)
+func (r *Retention) listSnapshotDirs(dir string) ([]time.Time, error) {
+	entries, err := r.fs.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}

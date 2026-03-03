@@ -39,30 +39,31 @@ func New(
 }
 
 // Start begins watching using fsnotify or polling.
-func (w *SnapshotWatcher) Start(ctx context.Context) error {
-	go w.consumeEvents()
+func (sw *SnapshotWatcher) Start(ctx context.Context) error {
+	sw.log.Info("starting snapshot watcher")
+	go sw.consumeEvents()
 
-	w.mu.RLock()
-	dir := w.cfg.Path
-	file := w.cfg.PrimaryName
-	mode := w.cfg.WatchMode
-	w.mu.RUnlock()
+	sw.mu.RLock()
+	dir := sw.cfg.Path
+	file := sw.cfg.PrimaryName
+	mode := sw.cfg.WatchMode
+	sw.mu.RUnlock()
 
-	w.checkForNewSnapshot()
+	sw.checkForNewSnapshot()
 
-	return w.fileWatch.StartWatchingForFile(ctx, mode, dir, file, w.events, w.log)
+	return sw.fileWatch.StartWatchingForFile(ctx, mode, dir, file, sw.events, sw.log)
 }
 
 // consumeEvents runs checkForNewSnapshot() for each incoming signal.
-func (w *SnapshotWatcher) consumeEvents() {
-	for range w.events {
-		w.checkForNewSnapshot()
+func (sw *SnapshotWatcher) consumeEvents() {
+	for range sw.events {
+		sw.checkForNewSnapshot()
 	}
 }
 
 // CurrentConfig returns a copy of the current config.
-func (w *SnapshotWatcher) CurrentConfig() Config {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-	return w.cfg
+func (sw *SnapshotWatcher) CurrentConfig() Config {
+	sw.mu.RLock()
+	defer sw.mu.RUnlock()
+	return sw.cfg
 }

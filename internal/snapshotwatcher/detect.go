@@ -8,13 +8,13 @@ import (
 )
 
 // checkForNewSnapshot checks for a new snapshot and emits a job if needed.
-func (w *SnapshotWatcher) checkForNewSnapshot() {
-	w.mu.RLock()
-	dir := w.cfg.Path
-	primary := w.cfg.PrimaryName
-	aux := append([]string(nil), w.cfg.AuxNames...)
-	last := w.lastModTime
-	w.mu.RUnlock()
+func (sw *SnapshotWatcher) checkForNewSnapshot() {
+	sw.mu.RLock()
+	dir := sw.cfg.Path
+	primary := sw.cfg.PrimaryName
+	aux := append([]string(nil), sw.cfg.AuxNames...)
+	last := sw.lastModTime
+	sw.mu.RUnlock()
 
 	path := filepath.Join(dir, primary)
 
@@ -31,13 +31,13 @@ func (w *SnapshotWatcher) checkForNewSnapshot() {
 	snap := snapshot.Snapshot{
 		Dir:     dir,
 		Primary: snapshot.FromFileInfo(path, info),
-		Aux:     w.loadAux(dir, aux),
+		Aux:     sw.loadAux(dir, aux),
 	}
 
-	w.mu.Lock()
-	w.lastModTime = mod
-	w.mu.Unlock()
+	sw.mu.Lock()
+	sw.lastModTime = mod
+	sw.mu.Unlock()
 
-	w.log.Debug("snapshot detected", "path", path)
-	w.mb.Put(snapshot.Job{Snap: snap})
+	sw.log.Info("snapshot detected", "path", path)
+	sw.mb.Put(snapshot.Job{Snap: snap})
 }

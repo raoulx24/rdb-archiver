@@ -34,6 +34,7 @@ func main() {
 	if err != nil {
 		stdLog.Fatalf("failed to load config: %v", err)
 	}
+	cfg.ApplyDefaults()
 
 	// Logger
 	logg := logging.NewSlogLogger(cfg.Logging)
@@ -47,6 +48,7 @@ func main() {
 		cancel()
 	}(logg)
 
+	logg.Info("prepping dependencies")
 	// OSFS
 	osfs := fs.New(cfg.FS)
 
@@ -57,7 +59,7 @@ func main() {
 	ret := retention.New(logg)
 
 	// FileWatcher
-	fw, err := watchfs.New(cfg.WatchFS)
+	fw, err := watchfs.New(cfg.WatchFS, logg)
 	if err != nil {
 		panic(err)
 	}
@@ -118,10 +120,11 @@ func startConfigReload(
 	sw *snapshotwatcher.SnapshotWatcher,
 	wkr *worker.Worker,
 	osfs *fs.OSFS,
-	logg logging.Logger,
+	logg *logging.SlogLogger,
 	configFile string,
 	method string,
 ) {
+	logg.Debug("starting config reload")
 	dir := filepath.Dir(configFile)
 	base := filepath.Base(configFile)
 
@@ -166,6 +169,10 @@ func startConfigReload(
 					logg.Error("config reload failed", "error", err)
 					return
 				}
+				newCfg.ApplyDefaults()
+
+				// update logger
+				logg.UpdateConfig(newCfg.Logging)
 
 				// update file watcher config
 				if err := fw.UpdateConfig(newCfg.WatchFS); err != nil {

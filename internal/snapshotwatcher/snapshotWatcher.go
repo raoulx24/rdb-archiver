@@ -33,7 +33,7 @@ func New(
 		cfg:       cfg,
 		fileWatch: fw,
 		mb:        mb,
-		log:       log,
+		log:       log.With("pkg", "snapshotwatcher"),
 		events:    make(chan struct{}), // unbuffered
 	}
 }
@@ -51,7 +51,7 @@ func (sw *SnapshotWatcher) Start(ctx context.Context) error {
 
 	sw.checkForNewSnapshot()
 
-	return sw.fileWatch.StartWatchingForFile(ctx, mode, dir, file, sw.events, sw.log)
+	return sw.fileWatch.StartWatchingForFile(ctx, mode, dir, file, sw.events)
 }
 
 // consumeEvents runs checkForNewSnapshot() for each incoming signal.

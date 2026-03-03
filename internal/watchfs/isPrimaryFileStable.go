@@ -6,10 +6,10 @@ import (
 	"time"
 )
 
-func (fsw *FileWatcher) isPrimaryFileStable(dir, file string) bool {
-	fsw.mu.RLock()
-	stability := fsw.stabilityWindow
-	fsw.mu.RUnlock()
+func (wfs *FileWatcher) isPrimaryFileStable(dir, file string) bool {
+	wfs.mu.RLock()
+	stability := wfs.stabilityWindow
+	wfs.mu.RUnlock()
 
 	path := filepath.Join(dir, file)
 

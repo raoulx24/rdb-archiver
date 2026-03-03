@@ -33,7 +33,7 @@ type Rule struct {
 func New(logg logging.Logger) *Retention {
 	return &Retention{
 		cfg:  Config{},
-		logg: logg,
+		logg: logg.With("pkg", "retention"),
 	}
 }
 
@@ -63,18 +63,18 @@ func (r *Retention) Apply(ctx context.Context, filesystem fs.FS, archiveRoot, ne
 
 		if strings.TrimSpace(rule.Cron) != "" {
 			if err := r.promote(ctx, rule, ruleDir, newSnapshotDir, ts); err != nil {
-				r.logg.Error("promote failed", "goPackage", "retention", "ruleName", rule.Name, "error", err)
+				r.logg.Error("promote failed", "ruleName", rule.Name, "error", err)
 			}
 		}
 
 		if err := r.cleanup(rule, ruleDir); err != nil {
-			r.logg.Error("retention - cleanup %s failed", "goPackage", "retention", "ruleName", rule.Name, "error", err)
+			r.logg.Error("retention - cleanup %s failed", "ruleName", rule.Name, "error", err)
 		}
 	}
 
 	if removeUnknownFolders {
 		if err := r.removeUnknownFolders(rules, archiveRoot); err != nil {
-			r.logg.Error("retention - remove unknown folders failed", "goPackage", "retention", "error", err)
+			r.logg.Error("retention - remove unknown folders failed", "error", err)
 		}
 	}
 

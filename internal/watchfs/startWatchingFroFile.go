@@ -4,36 +4,35 @@ import (
 	"context"
 
 	"github.com/raoulx24/rdb-archiver/internal/fsprobe"
-	"github.com/raoulx24/rdb-archiver/internal/logging"
 )
 
 // StartWatchingForFile chooses mode and starts watching a single file.
-func (w *FileWatcher) StartWatchingForFile(
+func (wfs *FileWatcher) StartWatchingForFile(
 	ctx context.Context,
 	mode string,
 	dir string,
 	file string,
 	events chan<- struct{},
-	log logging.Logger,
 ) error {
+	wfs.logg.Debug("starting watch fs", "watchFSMode", mode)
 	switch mode {
 	case "fsnotify":
-		return w.WatchFsNotify(ctx, dir, file, events)
+		return wfs.WatchFsNotify(ctx, dir, file, events)
 
 	case "poll":
-		return w.WatchPolling(ctx, events)
+		return wfs.WatchPolling(ctx, events)
 
 	case "auto":
 		res := fsprobe.Probe(dir)
 		if res.FsnotifySupported {
-			log.Debug("fsnotify supported", "dir", dir)
-			return w.WatchFsNotify(ctx, dir, file, events)
+			wfs.logg.Debug("fsnotify supported", "dir", dir)
+			return wfs.WatchFsNotify(ctx, dir, file, events)
 		}
-		log.Error("fsnotify disabled, falling back to polling", "reason", res.Reason)
-		return w.WatchPolling(ctx, events)
+		wfs.logg.Error("fsnotify disabled, falling back to polling", "reason", res.Reason)
+		return wfs.WatchPolling(ctx, events)
 
 	default:
-		log.Error("invalid watch mode, using polling", "mode", mode)
-		return w.WatchPolling(ctx, events)
+		wfs.logg.Error("invalid watch mode, using polling", "mode", mode)
+		return wfs.WatchPolling(ctx, events)
 	}
 }

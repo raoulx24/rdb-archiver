@@ -5,7 +5,7 @@ import (
 )
 
 // debounceLoop collapses bursts of events and enforces a stability delay.
-func (w *FileWatcher) debounceLoop(
+func (wfs *FileWatcher) debounceLoop(
 	resetCh <-chan struct{},
 	events chan<- struct{},
 ) {
@@ -16,12 +16,13 @@ func (w *FileWatcher) debounceLoop(
 			t.Stop()
 		}
 
-		w.mu.RLock()
-		debounce := w.debounceWindow
-		stability := w.stabilityWindow
-		w.mu.RUnlock()
+		wfs.mu.RLock()
+		debounce := wfs.debounceWindow
+		stability := wfs.stabilityWindow
+		wfs.mu.RUnlock()
 
 		t = time.AfterFunc(debounce, func() {
+			wfs.logg.Debug("debounce loop triggered", "debounceWindow", debounce, "stabilityWindow", stability)
 			time.Sleep(stability)
 			events <- struct{}{}
 		})

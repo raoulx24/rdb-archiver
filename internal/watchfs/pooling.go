@@ -6,11 +6,12 @@ import (
 )
 
 // WatchPolling emits events at a fixed interval.
-func (w *FileWatcher) WatchPolling(
+func (wfs *FileWatcher) WatchPolling(
 	ctx context.Context,
 	events chan<- struct{},
 ) error {
-	ticker := time.NewTicker(w.pollInterval)
+	wfs.logg.Info("starting watch fs - pooling mode", "poolInterval", wfs.pollInterval)
+	ticker := time.NewTicker(wfs.pollInterval)
 	defer ticker.Stop()
 
 	for {

@@ -4,19 +4,22 @@ package watchfs
 import (
 	"sync"
 	"time"
+
+	"github.com/raoulx24/rdb-archiver/internal/logging"
 )
 
 // FileWatcher emits change events for a file using fsnotify or polling.
 type FileWatcher struct {
 	mu              sync.RWMutex
 	cfg             Config
+	logg            logging.Logger
 	debounceWindow  time.Duration
 	stabilityWindow time.Duration
 	pollInterval    time.Duration
 }
 
 // New creates a FileWatcher from config values.
-func New(cfg Config) (*FileWatcher, error) {
+func New(cfg Config, log logging.Logger) (*FileWatcher, error) {
 	debounce, err := time.ParseDuration(cfg.FSNotify.DebounceWindow)
 	if err != nil {
 		return nil, err
@@ -34,6 +37,7 @@ func New(cfg Config) (*FileWatcher, error) {
 
 	return &FileWatcher{
 		cfg:             cfg,
+		logg:            log.With("pkg", "watchfs"),
 		debounceWindow:  debounce,
 		pollInterval:    interval,
 		stabilityWindow: stability,
@@ -41,7 +45,7 @@ func New(cfg Config) (*FileWatcher, error) {
 }
 
 // UpdateConfig hot‑reloads timing parameters safely.
-func (w *FileWatcher) UpdateConfig(cfg Config) error {
+func (wfs *FileWatcher) UpdateConfig(cfg Config) error {
 	debounce, err := time.ParseDuration(cfg.FSNotify.DebounceWindow)
 	if err != nil {
 		return err
@@ -57,12 +61,12 @@ func (w *FileWatcher) UpdateConfig(cfg Config) error {
 		return err
 	}
 
-	w.mu.Lock()
-	w.cfg = cfg
-	w.debounceWindow = debounce
-	w.pollInterval = interval
-	w.stabilityWindow = stability
-	w.mu.Unlock()
+	wfs.mu.Lock()
+	wfs.cfg = cfg
+	wfs.debounceWindow = debounce
+	wfs.pollInterval = interval
+	wfs.stabilityWindow = stability
+	wfs.mu.Unlock()
 
 	return nil
 }

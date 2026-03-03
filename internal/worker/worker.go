@@ -19,18 +19,18 @@ type Worker struct {
 	mu        sync.RWMutex
 	cfg       Config
 	fs        fs.FS
-	log       logging.Logger
-	retention *retention.Engine
+	logg      logging.Logger
+	retention *retention.Retention
 	mb        *mailbox.Mailbox[snapshot.Job]
 }
 
 // New creates a worker using destination config and mailbox.
-func New(cfg Config, log logging.Logger, r *retention.Engine, mb *mailbox.Mailbox[snapshot.Job], filesystem fs.FS) *Worker {
+func New(cfg Config, log logging.Logger, r *retention.Retention, mb *mailbox.Mailbox[snapshot.Job], filesystem fs.FS) *Worker {
 	log.Debug("creating worker")
 	return &Worker{
 		cfg:       cfg,
 		fs:        filesystem,
-		log:       log,
+		logg:      log.With("pkg", "worker"),
 		retention: r,
 		mb:        mb,
 	}
@@ -40,19 +40,20 @@ func New(cfg Config, log logging.Logger, r *retention.Engine, mb *mailbox.Mailbo
 
 // Start runs the worker loop using mailbox semantics.
 func (w *Worker) Start(ctx context.Context) {
-	w.log.Info("starting worker")
+
+	w.logg.Info("starting worker")
 	w.updateRetentionRules()
 	for {
 		job := w.mb.Take()
 		if err := w.Handle(ctx, job.Snap); err != nil {
-			w.log.Error("worker: snapshotwatcher failed", "error", err)
+			w.logg.Error("snapshot handle failed", "error", err)
 		}
 	}
 }
 
 // Handle writes a snapshotwatcher directory and applies retention.
 func (w *Worker) Handle(ctx context.Context, snap snapshot.Snapshot) error {
-	w.log.Debug("entering Worker.Handle()")
+	w.logg.Debug("worker starting snapshot handling")
 	finalDir, err := w.writeSnapshot(ctx, snap)
 	if err != nil {
 		return err
@@ -63,17 +64,17 @@ func (w *Worker) Handle(ctx context.Context, snap snapshot.Snapshot) error {
 	w.mu.RUnlock()
 
 	root := filepath.Join(dest.Root, dest.SubDir)
-	w.log.Debug("destination root resolved", "root", root)
+	w.logg.Debug("destination root resolved", "root", root)
 
 	if err := w.retention.Apply(ctx, w.fs, root, finalDir); err != nil {
-		w.log.Error("worker: retention failed", "error", err)
+		w.logg.Error("worker: retention failed", "error", err)
 	}
 
 	return nil
 }
 
 func (w *Worker) UpdateConfig(cfg Config) {
-	w.log.Debug("entering Worker.UpdateConfig()")
+	w.logg.Debug("entering Worker.UpdateConfig()")
 	w.mu.Lock()
 	w.cfg = cfg
 	w.mu.Unlock()
@@ -83,7 +84,6 @@ func (w *Worker) UpdateConfig(cfg Config) {
 
 // writeSnapshot copies all snapshotwatcher files into an atomic directory.
 func (w *Worker) writeSnapshot(ctx context.Context, snap snapshot.Snapshot) (string, error) {
-	w.log.Debug("entering Worker.writeSnapshot()")
 	w.mu.RLock()
 	dest := w.cfg
 	w.mu.RUnlock()
@@ -95,7 +95,7 @@ func (w *Worker) writeSnapshot(ctx context.Context, snap snapshot.Snapshot) (str
 	ts := snap.Primary.ModTime.UTC().Format("2006-01-02T15-04-05")
 	tmpDir := filepath.Join(lastDir, ".tmp-"+ts)
 	finalDir := filepath.Join(lastDir, ts)
-	w.log.Debug("new destinations", "tmpDir", tmpDir, "finalDir", finalDir)
+	w.logg.Debug("new destinations", "tmpDir", tmpDir, "finalDir", finalDir)
 
 	if err := w.fs.MkdirAll(tmpDir); err != nil {
 		return "", fmt.Errorf("creating tmp dir: %w", err)
@@ -133,16 +133,16 @@ func (w *Worker) writeSnapshot(ctx context.Context, snap snapshot.Snapshot) (str
 func (w *Worker) copyArtifact(ctx context.Context, a snapshot.Artifact, srcDir string, dstDir string) error {
 	src := filepath.Join(srcDir, a.Name)
 	dst := filepath.Join(dstDir, a.Name)
-	w.log.Debug("copying artifact", "artifact", a.Name, "src", src, "dst", dst)
 	if err := w.fs.CopyFile(ctx, src, dst); err != nil {
 		return fmt.Errorf("copying %s: %w", a.Name, err)
 	}
+	w.logg.Info("worker copied artifact", "artifact", a.Name, "src", src, "dst", dst)
 	return nil
 }
 
 // updateRetentionRules adds to the retention rules the snapshotwatcher one
 func (w *Worker) updateRetentionRules() {
-	w.log.Debug("entering Worker.updateRetentionRules")
+	w.logg.Debug("entering Worker.updateRetentionRules")
 	w.mu.RLock()
 	mainRule := retention.Rule{
 		Name:  w.cfg.SnapshotSubdir,

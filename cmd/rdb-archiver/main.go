@@ -142,7 +142,7 @@ func startConfigReload(
 		wctx, watchCancel = context.WithCancel(ctx)
 
 		go func() {
-			if err := fw.StartWatchingForFile(wctx, mode, dir, base, reloadCh, logg); err != nil {
+			if err := fw.StartWatchingForFile(wctx, mode, dir, base, reloadCh); err != nil {
 				logg.Error("config watcher failed", "error", err)
 			}
 		}()

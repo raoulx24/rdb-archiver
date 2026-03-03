@@ -33,7 +33,7 @@ fs:
   retryDurationCap: "1s"
 
 logging:
-  level: "debug"    # info | debug | warn | error
+  level: "info"     # debug | info | warn | error
   format: "json"    # json | text
 
 configReload:

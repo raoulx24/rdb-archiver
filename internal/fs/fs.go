@@ -23,4 +23,5 @@ type FS interface {
 	RemoveAll(path string) error
 	ReadDir(path string) ([]os.DirEntry, error)
 	CopyDir(ctx context.Context, src, dst string) error
+	CreateCompressedTar(ctx context.Context, srcDir string, files []string, dst string) error
 }

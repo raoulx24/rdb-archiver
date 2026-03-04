@@ -10,7 +10,7 @@ destination:
   subDir: "$(HOSTNAME)"
   snapshotSubdir: "snapshots"
   retention:
-    lastCount: 5
+    lastCount: 6
     removeUnknownFolders: true
     rules:
     - name: "daily"
@@ -31,6 +31,7 @@ fs:
   maxRetries: 7
   retryBase: "50ms"
   retryDurationCap: "1s"
+  compressionLevel: 2
 
 logging:
   level: "info"     # debug | info | warn | error

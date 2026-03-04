@@ -86,62 +86,53 @@ func (w *Worker) UpdateConfig(cfg Config) {
 	w.updateRetentionRules()
 }
 
-// writeSnapshot copies all snapshotwatcher files into an atomic directory.
+// writeSnapshot creates a tar+compressed archive for all snapshot files atomically.
 func (w *Worker) writeSnapshot(ctx context.Context, snap snapshot.Snapshot) (string, error) {
 	w.mu.RLock()
 	dest := w.cfg
 	w.mu.RUnlock()
 
 	root := filepath.Join(dest.Root, dest.SubDir)
-	lastDir := filepath.Join(root, dest.SnapshotSubdir)
+	snapDir := filepath.Join(root, dest.SnapshotSubdir)
 
-	//ts := time.Now().UTC().Format("2006-01-02T15-04-05")
 	ts := snap.Primary.ModTime.UTC().Format("2006-01-02T15-04-05")
-	tmpDir := filepath.Join(lastDir, ".tmp-"+ts)
-	finalDir := filepath.Join(lastDir, ts)
-	w.logg.Debug("new destinations", "tmpDir", tmpDir, "finalDir", finalDir)
 
-	if err := w.fs.MkdirAll(tmpDir); err != nil {
-		return "", fmt.Errorf("creating tmp dir: %w", err)
+	// For now we fix the extension to .tar.zst; algorithm/level are hidden in fs.Config.
+	tmpArchive := filepath.Join(snapDir, ".tmp-"+ts+".tar.zst")
+	finalArchive := filepath.Join(snapDir, ts+".tar.zst")
+
+	w.logg.Debug("new destinations", "tmpArchive", tmpArchive, "finalArchive", finalArchive)
+
+	if err := w.fs.MkdirAll(snapDir); err != nil {
+		return "", fmt.Errorf("creating snapshot dir: %w", err)
 	}
 
-	// Copy primary
-	if err := w.copyArtifact(ctx, snap.Primary, snap.Dir, tmpDir); err != nil {
-		_ = w.fs.RemoveAll(tmpDir)
-		return "", err
-	}
-
-	// Copy aux
+	// Collect all artifact names (primary + aux) relative to snap.Dir.
+	files := make([]string, 0, 1+len(snap.Aux))
+	files = append(files, snap.Primary.Name)
 	for _, a := range snap.Aux {
-		if err := w.copyArtifact(ctx, a, snap.Dir, tmpDir); err != nil {
-			_ = w.fs.RemoveAll(tmpDir)
-			return "", err
+		files = append(files, a.Name)
+	}
+
+	// Create compressed tar archive into tmp file.
+	if err := w.fs.CreateCompressedTar(ctx, snap.Dir, files, tmpArchive); err != nil {
+		_ = w.fs.RemoveAll(tmpArchive)
+		return "", fmt.Errorf("creating compressed archive: %w", err)
+	}
+
+	// Finalize atomically: remove existing final archive if present, then rename.
+	if _, err := w.fs.Stat(finalArchive); err == nil {
+		if err := w.fs.RemoveAll(finalArchive); err != nil {
+			return "", fmt.Errorf("failed to remove existing final archive: %w", err)
 		}
 	}
 
-	// Finalize atomically
-	if _, err := w.fs.Stat(finalDir); err == nil {
-		if err := w.fs.RemoveAll(finalDir); err != nil {
-			return "", fmt.Errorf("failed to remove existing finalDir: %w", err)
-		}
-	}
-	if err := w.fs.Rename(ctx, tmpDir, finalDir); err != nil {
-		_ = w.fs.RemoveAll(tmpDir)
-		return "", fmt.Errorf("finalizing snapshotwatcher: %w", err)
+	if err := w.fs.Rename(ctx, tmpArchive, finalArchive); err != nil {
+		_ = w.fs.RemoveAll(tmpArchive)
+		return "", fmt.Errorf("finalizing snapshot archive: %w", err)
 	}
 
-	return finalDir, nil
-}
-
-// copyArtifact copies one file into the snapshotwatcher directory.
-func (w *Worker) copyArtifact(ctx context.Context, a snapshot.Artifact, srcDir string, dstDir string) error {
-	src := filepath.Join(srcDir, a.Name)
-	dst := filepath.Join(dstDir, a.Name)
-	if err := w.fs.CopyFile(ctx, src, dst); err != nil {
-		return fmt.Errorf("copying %s: %w", a.Name, err)
-	}
-	w.logg.Info("worker copied artifact", "artifact", a.Name, "src", src, "dst", dst)
-	return nil
+	return finalArchive, nil
 }
 
 // updateRetentionRules adds to the retention rules the snapshotwatcher one

@@ -6,6 +6,7 @@ require github.com/robfig/cron/v3 v3.0.1
 
 require (
 	github.com/fsnotify/fsnotify v1.9.0
+	github.com/klauspost/compress v1.18.4
 	gopkg.in/yaml.v3 v3.0.1
 )
 

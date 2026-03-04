@@ -6,6 +6,7 @@ type Config struct {
 	MaxRetries       int    `yaml:"maxRetries"`
 	RetryBase        string `yaml:"retryBase"`
 	RetryDurationCap string `yaml:"retryDurationCap"`
+	CompressionLevel int    `yaml:"compressionLevel"`
 }
 
 func (c *Config) ApplyDefaults() {
@@ -17,6 +18,9 @@ func (c *Config) ApplyDefaults() {
 	}
 	if c.RetryDurationCap == "" || !isValidDuration(c.RetryDurationCap) {
 		c.RetryDurationCap = "1s"
+	}
+	if c.CompressionLevel == 0 {
+		c.CompressionLevel = 2
 	}
 }
 

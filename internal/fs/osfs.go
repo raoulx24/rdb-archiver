@@ -61,6 +61,13 @@ func (o *OSFS) CopyDir(ctx context.Context, src, dst string) error {
 	return copyDirWithRetry(ctx, o, cfg, src, dst)
 }
 
+func (o *OSFS) CreateCompressedTar(ctx context.Context, srcDir string, files []string, dst string) error {
+	o.mu.RLock()
+	cfg := o.cfg
+	o.mu.RUnlock()
+	return createCompressedTarWithRetry(ctx, o, cfg, srcDir, files, dst)
+}
+
 func (o *OSFS) UpdateConfig(cfg Config) {
 	o.mu.Lock()
 	o.cfg = cfg

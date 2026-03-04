@@ -9,6 +9,7 @@ import (
 
 	"github.com/raoulx24/rdb-archiver/internal/config"
 	"github.com/raoulx24/rdb-archiver/internal/fs"
+	"github.com/raoulx24/rdb-archiver/internal/health"
 	"github.com/raoulx24/rdb-archiver/internal/logging"
 	"github.com/raoulx24/rdb-archiver/internal/mailbox"
 	"github.com/raoulx24/rdb-archiver/internal/retention"
@@ -79,6 +80,13 @@ func main() {
 		)
 		go reloader.Start(ctx)
 	}
+
+	healthSrv := health.New(cfg.Health, snapWatcher)
+	go func() {
+		if err := healthSrv.Start(ctx); err != nil {
+			logg.Error("health server stopped", "error", err)
+		}
+	}()
 
 	<-ctx.Done()
 	stdLog.Println("exit complete")

@@ -13,13 +13,15 @@ import (
 )
 
 type Watcher struct {
-	mu          sync.RWMutex
-	cfg         Config
-	lastModTime time.Time
-	events      chan struct{}
-	fileWatch   *watchfs.FileWatcher
-	mb          *mailbox.Mailbox[snapshot.Job]
-	logg        logging.Logger
+	mu            sync.RWMutex
+	cfg           Config
+	lastModTime   time.Time
+	events        chan struct{}
+	fileWatch     *watchfs.FileWatcher
+	mb            *mailbox.Mailbox[snapshot.Job]
+	lastHeartbeat time.Time
+	timerTick     time.Duration
+	logg          logging.Logger
 }
 
 // New creates a snapshotwatcher watcher with initial config.
@@ -32,11 +34,13 @@ func New(
 	logg := log.With("pkg", "snapshotwatcher")
 	logg.Debug("creating snapshot watcher")
 	return &Watcher{
-		cfg:       cfg,
-		fileWatch: fw,
-		mb:        mb,
-		logg:      logg,
-		events:    make(chan struct{}), // unbuffered
+		cfg:           cfg,
+		fileWatch:     fw,
+		mb:            mb,
+		lastHeartbeat: time.Now(),
+		timerTick:     20 * time.Second,
+		logg:          logg,
+		events:        make(chan struct{}), // unbuffered
 	}
 }
 
@@ -58,21 +62,35 @@ func (sw *Watcher) Start(ctx context.Context) error {
 
 	sw.checkForNewSnapshot()
 
+	sw.mu.Lock()
+	sw.lastHeartbeat = time.Now()
+	sw.mu.Unlock()
+
 	return sw.fileWatch.StartWatchingForFile(ctx, mode, dir, file, sw.events)
 }
 
 // consumeEvents runs checkForNewSnapshot() for each incoming signal.
 func (sw *Watcher) consumeEvents(ctx context.Context, events <-chan struct{}) {
+	ticker := time.NewTicker(sw.timerTick)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			sw.logg.Info("stopping snapshot watcher event loop")
 			return
+		case <-ticker.C:
+			sw.mu.Lock()
+			sw.lastHeartbeat = time.Now()
+			sw.mu.Unlock()
 		case _, ok := <-events:
 			if !ok {
 				sw.logg.Info("events channel closed, stopping event loop")
 				return
 			}
+			sw.mu.Lock()
+			sw.lastHeartbeat = time.Now()
+			sw.mu.Unlock()
 			sw.checkForNewSnapshot()
 		}
 	}
@@ -83,4 +101,11 @@ func (sw *Watcher) CurrentConfig() Config {
 	sw.mu.RLock()
 	defer sw.mu.RUnlock()
 	return sw.cfg
+}
+
+func (sw *Watcher) IsAlive(maxSilence time.Duration) bool {
+	sw.mu.RLock()
+	last := sw.lastHeartbeat
+	sw.mu.RUnlock()
+	return time.Since(last) < maxSilence
 }

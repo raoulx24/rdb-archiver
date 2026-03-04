@@ -37,6 +37,9 @@ logging:
   level: "info"     # debug | info | warn | error
   format: "json"    # json | text
 
+health:
+  port: 8080
+
 configReload:
   enabled: true
   method: "fsnotify"

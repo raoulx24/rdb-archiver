@@ -44,6 +44,7 @@ func (c *Config) ApplyDefaults() {
 	c.WatchFS.ApplyDefaults()
 	c.FS.ApplyDefaults()
 	c.Logging.ApplyDefaults()
+	c.Health.ApplyDefaults()
 	c.ConfigReload.ApplyDefaults()
 }
 

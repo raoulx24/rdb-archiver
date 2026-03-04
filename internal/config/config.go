@@ -2,6 +2,7 @@ package config
 
 import (
 	"github.com/raoulx24/rdb-archiver/internal/fs"
+	"github.com/raoulx24/rdb-archiver/internal/health"
 	"github.com/raoulx24/rdb-archiver/internal/logging"
 	"github.com/raoulx24/rdb-archiver/internal/snapshotwatcher"
 	"github.com/raoulx24/rdb-archiver/internal/watchfs"
@@ -14,6 +15,7 @@ type Config struct {
 	WatchFS      watchfs.Config         `yaml:"watchFS"`
 	FS           fs.Config              `yaml:"fs"`
 	Logging      logging.Config         `yaml:"logging"`
+	Health       health.Config          `yaml:"health"`
 	ConfigReload ReloadConfig           `yaml:"configReload"`
 }
 

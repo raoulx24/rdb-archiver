@@ -12,14 +12,14 @@ import (
 	"github.com/raoulx24/rdb-archiver/internal/watchfs"
 )
 
-type SnapshotWatcher struct {
+type Watcher struct {
 	mu          sync.RWMutex
 	cfg         Config
 	lastModTime time.Time
 	events      chan struct{}
 	fileWatch   *watchfs.FileWatcher
 	mb          *mailbox.Mailbox[snapshot.Job]
-	log         logging.Logger
+	logg        logging.Logger
 }
 
 // New creates a snapshotwatcher watcher with initial config.
@@ -28,20 +28,27 @@ func New(
 	fw *watchfs.FileWatcher,
 	mb *mailbox.Mailbox[snapshot.Job],
 	log logging.Logger,
-) *SnapshotWatcher {
-	return &SnapshotWatcher{
+) *Watcher {
+	logg := log.With("pkg", "snapshotwatcher")
+	logg.Debug("creating snapshot watcher")
+	return &Watcher{
 		cfg:       cfg,
 		fileWatch: fw,
 		mb:        mb,
-		log:       log.With("pkg", "snapshotwatcher"),
+		logg:      logg,
 		events:    make(chan struct{}), // unbuffered
 	}
 }
 
 // Start begins watching using fsnotify or polling.
-func (sw *SnapshotWatcher) Start(ctx context.Context) error {
-	sw.log.Info("starting snapshot watcher")
-	go sw.consumeEvents()
+func (sw *Watcher) Start(ctx context.Context) error {
+	sw.logg.Info("starting snapshot watcher")
+	// Create a fresh event channel per start.
+	sw.mu.Lock()
+	sw.events = make(chan struct{})
+	events := sw.events
+	sw.mu.Unlock()
+	go sw.consumeEvents(ctx, events)
 
 	sw.mu.RLock()
 	dir := sw.cfg.Path
@@ -55,14 +62,24 @@ func (sw *SnapshotWatcher) Start(ctx context.Context) error {
 }
 
 // consumeEvents runs checkForNewSnapshot() for each incoming signal.
-func (sw *SnapshotWatcher) consumeEvents() {
-	for range sw.events {
-		sw.checkForNewSnapshot()
+func (sw *Watcher) consumeEvents(ctx context.Context, events <-chan struct{}) {
+	for {
+		select {
+		case <-ctx.Done():
+			sw.logg.Info("stopping snapshot watcher event loop")
+			return
+		case _, ok := <-events:
+			if !ok {
+				sw.logg.Info("events channel closed, stopping event loop")
+				return
+			}
+			sw.checkForNewSnapshot()
+		}
 	}
 }
 
 // CurrentConfig returns a copy of the current config.
-func (sw *SnapshotWatcher) CurrentConfig() Config {
+func (sw *Watcher) CurrentConfig() Config {
 	sw.mu.RLock()
 	defer sw.mu.RUnlock()
 	return sw.cfg

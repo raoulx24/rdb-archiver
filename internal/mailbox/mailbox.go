@@ -1,6 +1,9 @@
 ﻿package mailbox
 
-import "sync"
+import (
+	"context"
+	"sync"
+)
 
 // Mailbox is a single-slot buffer where the latest job always wins.
 // It is NOT a queue. It holds at most one pending job.
@@ -28,17 +31,22 @@ func (m *Mailbox[T]) Put(j T) {
 }
 
 // Take blocks until a job is available, then returns it and clears the slot.
-func (m *Mailbox[T]) Take() T {
+func (m *Mailbox[T]) Take(ctx context.Context) (T, bool) {
+	var zero T
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	for m.job == nil {
+		if ctx.Err() != nil {
+			return zero, false
+		}
+
 		m.cond.Wait()
 	}
 
 	j := *m.job
 	m.job = nil
-	return j
+	return j, true
 }
 
 // TryTake returns the job if present, or nil if empty.

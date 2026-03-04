@@ -20,6 +20,9 @@ type FileWatcher struct {
 
 // New creates a FileWatcher from config values.
 func New(cfg Config, log logging.Logger) (*FileWatcher, error) {
+	logg := log.With("pkg", "watchfs")
+	logg.Debug("creating watch fs")
+
 	debounce, err := time.ParseDuration(cfg.FSNotify.DebounceWindow)
 	if err != nil {
 		return nil, err
@@ -37,7 +40,7 @@ func New(cfg Config, log logging.Logger) (*FileWatcher, error) {
 
 	return &FileWatcher{
 		cfg:             cfg,
-		logg:            log.With("pkg", "watchfs"),
+		logg:            logg,
 		debounceWindow:  debounce,
 		pollInterval:    interval,
 		stabilityWindow: stability,
@@ -46,6 +49,7 @@ func New(cfg Config, log logging.Logger) (*FileWatcher, error) {
 
 // UpdateConfig hot‑reloads timing parameters safely.
 func (wfs *FileWatcher) UpdateConfig(cfg Config) error {
+	wfs.logg.Debug("updating config")
 	debounce, err := time.ParseDuration(cfg.FSNotify.DebounceWindow)
 	if err != nil {
 		return err

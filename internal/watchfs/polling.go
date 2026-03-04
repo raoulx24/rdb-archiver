@@ -10,7 +10,7 @@ func (wfs *FileWatcher) WatchPolling(
 	ctx context.Context,
 	events chan<- struct{},
 ) error {
-	wfs.logg.Info("starting watch fs - pooling mode", "poolInterval", wfs.pollInterval)
+	wfs.logg.Info("starting watch fs - polling mode", "pollInterval", wfs.pollInterval)
 	ticker := time.NewTicker(wfs.pollInterval)
 	defer ticker.Stop()
 

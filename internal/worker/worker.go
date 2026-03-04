@@ -26,11 +26,12 @@ type Worker struct {
 
 // New creates a worker using destination config and mailbox.
 func New(cfg Config, log logging.Logger, r *retention.Retention, mb *mailbox.Mailbox[snapshot.Job], filesystem fs.FS) *Worker {
-	log.Debug("creating worker")
+	logg := log.With("pkg", "worker")
+	logg.Debug("creating worker")
 	return &Worker{
 		cfg:       cfg,
 		fs:        filesystem,
-		logg:      log.With("pkg", "worker"),
+		logg:      logg,
 		retention: r,
 		mb:        mb,
 	}
@@ -40,11 +41,14 @@ func New(cfg Config, log logging.Logger, r *retention.Retention, mb *mailbox.Mai
 
 // Start runs the worker loop using mailbox semantics.
 func (w *Worker) Start(ctx context.Context) {
-
 	w.logg.Info("starting worker")
 	w.updateRetentionRules()
 	for {
-		job := w.mb.Take()
+		job, ok := w.mb.Take(ctx)
+		if !ok {
+			w.logg.Info("worker stopped")
+			return
+		}
 		if err := w.Handle(ctx, job.Snap); err != nil {
 			w.logg.Error("snapshot handle failed", "error", err)
 		}
@@ -74,7 +78,7 @@ func (w *Worker) Handle(ctx context.Context, snap snapshot.Snapshot) error {
 }
 
 func (w *Worker) UpdateConfig(cfg Config) {
-	w.logg.Debug("entering Worker.UpdateConfig()")
+	w.logg.Debug("uppdating config")
 	w.mu.Lock()
 	w.cfg = cfg
 	w.mu.Unlock()

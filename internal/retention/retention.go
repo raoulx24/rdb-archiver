@@ -18,7 +18,6 @@ import (
 // Retention manages promotion and cleanup rules.
 type Retention struct {
 	mu   sync.RWMutex
-	fs   fs.FS
 	cfg  Config
 	logg logging.Logger
 }
@@ -30,15 +29,18 @@ type Rule struct {
 }
 
 // New creates a retention engine from cfg.
-func New(logg logging.Logger) *Retention {
+func New(log logging.Logger) *Retention {
+	logg := log.With("pkg", "retention")
+	logg.Debug("creating retention")
 	return &Retention{
 		cfg:  Config{},
-		logg: logg.With("pkg", "retention"),
+		logg: logg,
 	}
 }
 
 // UpdateConfig hot‑reloads retention rules.
 func (r *Retention) UpdateConfig(config Config) {
+	r.logg.Debug("updating config")
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.cfg = config
@@ -46,8 +48,7 @@ func (r *Retention) UpdateConfig(config Config) {
 
 // Apply promotes the new snapshotwatcher and prunes old ones.
 func (r *Retention) Apply(ctx context.Context, filesystem fs.FS, archiveRoot, newSnapshotDir string) error {
-	r.logg.Info("retention engine is starting to apply rules")
-	r.fs = filesystem
+	r.logg.Debug("retention engine is starting to apply rules")
 	r.mu.RLock()
 	rules := append([]Rule(nil), r.cfg.Rules...)
 	removeUnknownFolders := r.cfg.RemoveUnknownFolders
@@ -62,18 +63,18 @@ func (r *Retention) Apply(ctx context.Context, filesystem fs.FS, archiveRoot, ne
 		ruleDir := filepath.Join(archiveRoot, rule.Name)
 
 		if strings.TrimSpace(rule.Cron) != "" {
-			if err := r.promote(ctx, rule, ruleDir, newSnapshotDir, ts); err != nil {
+			if err := r.promote(ctx, filesystem, rule, ruleDir, newSnapshotDir, ts); err != nil {
 				r.logg.Error("promote failed", "ruleName", rule.Name, "error", err)
 			}
 		}
 
-		if err := r.cleanup(rule, ruleDir); err != nil {
-			r.logg.Error("retention - cleanup %s failed", "ruleName", rule.Name, "error", err)
+		if err := r.cleanup(filesystem, rule, ruleDir); err != nil {
+			r.logg.Error("retention - cleanup failed", "ruleName", rule.Name, "error", err)
 		}
 	}
 
 	if removeUnknownFolders {
-		if err := r.removeUnknownFolders(rules, archiveRoot); err != nil {
+		if err := r.removeUnknownFolders(filesystem, rules, archiveRoot); err != nil {
 			r.logg.Error("retention - remove unknown folders failed", "error", err)
 		}
 	}
@@ -82,7 +83,7 @@ func (r *Retention) Apply(ctx context.Context, filesystem fs.FS, archiveRoot, ne
 }
 
 // promote copies the snapshotwatcher if none exists after the cron boundary.
-func (r *Retention) promote(ctx context.Context, rule Rule, ruleDir, snapDir string, snapTS time.Time) error {
+func (r *Retention) promote(ctx context.Context, filesystem fs.FS, rule Rule, ruleDir, snapDir string, snapTS time.Time) error {
 	sched, err := cron.ParseStandard(rule.Cron)
 	if err != nil {
 		return fmt.Errorf("invalid cron %q: %w", rule.Cron, err)
@@ -93,12 +94,12 @@ func (r *Retention) promote(ctx context.Context, rule Rule, ruleDir, snapDir str
 	next := sched.Next(prev)
 
 	// Ensure folder exists.
-	if err := r.fs.MkdirAll(ruleDir); err != nil {
+	if err := filesystem.MkdirAll(ruleDir); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
 
 	// Check if a snapshotwatcher already exists after boundary.
-	existing, err := r.listSnapshotDirs(ruleDir)
+	existing, err := r.listSnapshotDirs(filesystem, ruleDir)
 	if err != nil {
 		return err
 	}
@@ -113,12 +114,12 @@ func (r *Retention) promote(ctx context.Context, rule Rule, ruleDir, snapDir str
 	// Promote by copying the directory.
 	dst := filepath.Join(ruleDir, filepath.Base(snapDir))
 	r.logg.Info("creating snapshot in cron folder", "rule", rule.Name, "cron", rule.Cron, "snapshot", filepath.Base(snapDir))
-	return r.fs.CopyDir(ctx, snapDir, dst)
+	return filesystem.CopyDir(ctx, snapDir, dst)
 }
 
 // cleanup keeps only the newest N snapshotwatcher directories.
-func (r *Retention) cleanup(rule Rule, ruleDir string) error {
-	entries, err := r.fs.ReadDir(ruleDir)
+func (r *Retention) cleanup(filesystem fs.FS, rule Rule, ruleDir string) error {
+	entries, err := filesystem.ReadDir(ruleDir)
 	if err != nil {
 		return fmt.Errorf("reading folder: %w", err)
 	}
@@ -140,20 +141,23 @@ func (r *Retention) cleanup(rule Rule, ruleDir string) error {
 
 	for _, name := range dirs[rule.Count:] {
 		r.logg.Info("removing old snapshot in cron folder", "rule", rule.Name, "cron", rule.Cron, "snapshot", name)
-		_ = r.fs.RemoveAll(filepath.Join(ruleDir, name))
+		err = filesystem.RemoveAll(filepath.Join(ruleDir, name))
+		if err != nil {
+			r.logg.Warn("removal of folder failed", "rule", rule.Name, "snapshot", name, "error", err)
+		}
 	}
 
 	return nil
 }
 
 // removeUnknownFolders removes folders that are not defined in the retention rules.
-func (r *Retention) removeUnknownFolders(rules []Rule, ruleDir string) error {
+func (r *Retention) removeUnknownFolders(filesystem fs.FS, rules []Rule, ruleDir string) error {
 	known := make(map[string]struct{})
 	for _, r := range rules {
 		known[r.Name] = struct{}{}
 	}
 
-	entries, err := r.fs.ReadDir(ruleDir)
+	entries, err := filesystem.ReadDir(ruleDir)
 	if err != nil {
 		return err
 	}
@@ -168,7 +172,7 @@ func (r *Retention) removeUnknownFolders(rules []Rule, ruleDir string) error {
 		if _, ok := known[name]; !ok {
 			full := filepath.Join(ruleDir, name)
 			r.logg.Warn("Removing unknown cron folder", "path", full)
-			if err := r.fs.RemoveAll(full); err != nil {
+			if err := filesystem.RemoveAll(full); err != nil {
 				return fmt.Errorf("removing dir %s: %w", full, err)
 			}
 		}
@@ -178,8 +182,8 @@ func (r *Retention) removeUnknownFolders(rules []Rule, ruleDir string) error {
 }
 
 // listSnapshotDirs returns timestamps of snapshotwatcher directories.
-func (r *Retention) listSnapshotDirs(dir string) ([]time.Time, error) {
-	entries, err := r.fs.ReadDir(dir)
+func (r *Retention) listSnapshotDirs(filesystem fs.FS, dir string) ([]time.Time, error) {
+	entries, err := filesystem.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -215,12 +219,4 @@ func prevCron(s cron.Schedule, t time.Time) time.Time {
 		}
 		cur = next
 	}
-}
-
-func sameWindow(ts, boundary time.Time, sched cron.Schedule) bool {
-	// next boundary after "boundary"
-	next := sched.Next(boundary)
-
-	// ts must be >= boundary AND < next boundary
-	return !ts.Before(boundary) && ts.Before(next)
 }

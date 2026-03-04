@@ -8,7 +8,7 @@ import (
 )
 
 // checkForNewSnapshot checks for a new snapshot and emits a job if needed.
-func (sw *SnapshotWatcher) checkForNewSnapshot() {
+func (sw *Watcher) checkForNewSnapshot() {
 	sw.mu.RLock()
 	dir := sw.cfg.Path
 	primary := sw.cfg.PrimaryName
@@ -38,6 +38,6 @@ func (sw *SnapshotWatcher) checkForNewSnapshot() {
 	sw.lastModTime = mod
 	sw.mu.Unlock()
 
-	sw.log.Info("snapshot detected", "path", path)
+	sw.logg.Info("snapshot detected", "path", path)
 	sw.mb.Put(snapshot.Job{Snap: snap})
 }

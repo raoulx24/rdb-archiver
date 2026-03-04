@@ -44,4 +44,11 @@ func (c *Config) ApplyDefaults() {
 	c.WatchFS.ApplyDefaults()
 	c.FS.ApplyDefaults()
 	c.Logging.ApplyDefaults()
+	c.ConfigReload.ApplyDefaults()
+}
+
+func (rc *ReloadConfig) ApplyDefaults() {
+	if rc.Method == "" {
+		rc.Method = "fsnotify"
+	}
 }

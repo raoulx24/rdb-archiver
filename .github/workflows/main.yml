@@ -1,0 +1,253 @@
+name: Docker
+
+on:
+  # push:
+  #   branches: [ "master" ]
+  #   paths: [ "src/**" ]
+  workflow_dispatch:
+
+
+env:
+  GHCR_IMAGE: ghcr.io/raoulx24/rdb-archiver
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The pre-build job gets versions and stuff
+  pre-build:
+    runs-on: 'ubuntu-latest'
+    
+    outputs:
+      semvertag: ${{ steps.export.outputs.semvertag }}
+      majorminor: ${{ steps.export.outputs.majorminor }}
+      majorminorpatch: ${{ steps.export.outputs.majorminorpatch }}
+    
+    name: Pre build actions (get versions)
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      with:
+        fetch-depth: 0
+    
+    - name: Install GitVersion
+      uses: gittools/actions/gitversion/setup@v3.0.3
+      with:
+        versionSpec: '6.0.0'
+
+    - name: Get GitVersion
+      id: gitversion
+      uses: gittools/actions/gitversion/execute@v3.0.0
+
+    - name: Export version outputs
+      id: export
+      run: |
+        SEMVERTAG="$(echo '${{ steps.gitversion.outputs.FullSemVer }}' | sed 's/+/-/g')"
+        echo "semvertag=${SEMVERTAG}" >> $GITHUB_OUTPUT
+        echo "majorminor=${{ steps.gitversion.outputs.Major }}.${{ steps.gitversion.outputs.Minor }}" >> $GITHUB_OUTPUT
+        echo "majorminorpatch=${{ steps.gitversion.outputs.MajorMinorPatch }}" >> $GITHUB_OUTPUT
+
+  # The build job builds the Docker image for each platform specified in the matrix.
+  build-go:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+        - linux/amd64
+        - linux/arm64
+      # The matrix includes two platforms: linux/amd64 and linux/arm64.
+      # The build job will run for each platform in the matrix.
+
+    permissions:
+      # Permissions for the build job, which can be overridden at the step level
+      # The permissions are set to allow the job to write to the GitHub Container Registry (GHCR) and read from the repository.
+      attestations: write
+      actions: read
+      checks: write
+      contents: write
+      deployments: none
+      id-token: write
+      issues: read
+      discussions: read
+      packages: write
+      pages: none
+      pull-requests: read
+      repository-projects: read
+      security-events: read
+      statuses: read
+    
+    needs:
+    - pre-build
+
+    runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest' || matrix.platform == 'linux/arm64' && 'ubuntu-24.04-arm' }}
+
+    name: Build Docker image for ${{ matrix.platform }}
+
+    steps:
+    - name: Prepare environment for current platform 
+      id: prepare
+      run: |
+        platform=${{ matrix.platform }}
+        echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+
+    - name: Checkout
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+    - name: Docker meta default
+      id: meta
+      uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
+      with:
+        images: ${{ env.GHCR_IMAGE }}
+
+    - name: Set up Docker Context for Buildx
+      id: buildx-context
+      run: |
+        docker context create builders
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      with:
+        endpoint: builders
+        platforms: ${{ matrix.platform }}
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build and push by digest
+      id: build
+      uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+      env:
+        DOCKER_BUILDKIT: 1
+      with:
+        context: .
+        file: build/dockerfile
+        platforms: ${{ matrix.platform }}
+        labels: ${{ steps.meta.outputs.labels }}
+        annotations: ${{ steps.meta.outputs.annotations }}
+        outputs: type=image,name=${{ env.GHCR_IMAGE }},push-by-digest=true,name-canonical=true,push=true,oci-mediatypes=true
+        cache-from: type=gha,scope=${{ github.repository }}-${{ github.ref_name }}-${{ matrix.platform }}
+        cache-to: type=gha,scope=${{ github.repository }}-${{ github.ref_name }}-${{ matrix.platform }}
+        build-args: |
+          VERSION=${{ needs.pre-build.outputs.semvertag }}
+          COMMIT=${{ github.sha }}
+          BUILDDATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    - name: Export digest
+      run: |
+        mkdir -p /tmp/digests
+        digest="${{ steps.build.outputs.digest }}"
+        touch "/tmp/digests/${digest#sha256:}"
+
+    - name: Upload digest
+      uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+      with:
+        name: digests-${{ env.PLATFORM_PAIR }}
+        path: /tmp/digests/*
+        if-no-files-found: error
+        retention-days: 1
+
+  merge:
+  # This job merges the Docker manifests for the different platforms built in the previous job.
+    name: Merge Docker manifests
+    runs-on: ubuntu-latest
+    permissions:
+      attestations: write
+      actions: read
+      checks: read
+      contents: read
+      deployments: none
+      id-token: write
+      issues: read
+      discussions: read
+      packages: write
+      pages: none
+      pull-requests: read
+      repository-projects: read
+      security-events: read
+      statuses: read
+
+    needs:
+    - pre-build
+    - build-go
+ 
+    steps:
+    - name: Download digests
+      uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+      with:
+        path: /tmp/digests
+        pattern: digests-*
+        merge-multiple: true
+
+    - name: Docker meta
+      id: meta
+      uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
+      with:
+        images: ${{ env.GHCR_IMAGE }}
+        annotations: |
+          type=org.opencontainers.image.description,value=${{ github.event.repository.description || 'No description provided' }}
+        tags: |
+          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
+          type=raw,value=${{ needs.pre-build.outputs.majorminorpatch }},enable=${{ github.ref == 'refs/heads/master' }}
+          type=raw,value=${{ needs.pre-build.outputs.majorminor }},enable=${{ github.ref == 'refs/heads/master' }}
+          type=raw,value=${{ needs.pre-build.outputs.semvertag }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      with:
+        driver-opts: |
+          network=host
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Get execution timestamp with RFC3339 format
+      id: timestamp
+      run: |
+        echo "timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> $GITHUB_OUTPUT
+
+    - name: Create manifest list and push
+      working-directory: /tmp/digests
+      id: manifest-annotate
+      continue-on-error: true
+      run: |
+        docker buildx imagetools create \
+          $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          --annotation='index:org.opencontainers.image.description=${{ github.event.repository.description }}' \
+          --annotation='index:org.opencontainers.image.created=${{ steps.timestamp.outputs.timestamp }}' \
+          --annotation='index:org.opencontainers.image.url=${{ github.event.repository.url }}' \
+          --annotation='index:org.opencontainers.image.source=${{ github.event.repository.url }}' \
+          $(printf '${{ env.GHCR_IMAGE }}@sha256:%s ' *)
+
+    - name: Create manifest list and push without annotations
+      if: steps.manifest-annotate.outcome == 'failure'
+      working-directory: /tmp/digests
+      run: |
+        docker buildx imagetools create  $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          $(printf '${{ env.GHCR_IMAGE }}@sha256:%s ' *)
+    
+    - name: Install cosign
+      uses: sigstore/cosign-installer@v3.5.0
+
+    - name: Sign images with cosign
+      run: |
+        for tag in $(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON"); do
+          cosign sign --yes "${tag}"
+        done
+
+    - name: Inspect image
+      id: inspect
+      run: |
+        docker buildx imagetools inspect '${{ env.GHCR_IMAGE }}:${{ steps.meta.outputs.version }}'

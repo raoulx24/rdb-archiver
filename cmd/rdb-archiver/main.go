@@ -19,6 +19,13 @@ import (
 	"github.com/raoulx24/rdb-archiver/internal/worker"
 )
 
+var (
+    Version   = "dev"
+    Commit    = "none"
+    BuildDate = "unknown"
+)
+
+
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

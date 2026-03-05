@@ -1,0 +1,24 @@
+FROM golang:1.26 AS builder
+
+ARG VERSION
+ARG COMMIT
+ARG BUILDDATE
+
+ENV CGO_ENABLED=0
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+RUN go build -trimpath \
+    -ldflags="-X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.BuildDate=${BUILDDATE} -s -w" \
+    -o /rdb-archiver ./cmd/rdb-archiver
+
+FROM scratch
+
+COPY --from=builder /rdb-archiver /rdb-archiver
+
+ENTRYPOINT ["/rdb-archiver"]

@@ -121,6 +121,11 @@ jobs:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Compute build timestamp
+      id: ts
+      run: echo "ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+
 
     - name: Build and push by digest
       id: build
@@ -139,7 +144,7 @@ jobs:
         build-args: |
           VERSION=${{ needs.pre-build.outputs.semvertag }}
           COMMIT=${{ github.sha }}
-          BUILDDATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          BUILDDATE=${{ steps.ts.outputs.ts }}
 
     - name: Export digest
       run: |

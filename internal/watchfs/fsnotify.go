@@ -53,7 +53,7 @@ func (wfs *FileWatcher) WatchFsNotify(
 			}
 
 		case <-fw.Errors:
-			// ignore fsnotify errors; caller may log
+			wfs.logg.Warn("fsnotify error", "error", err)
 		}
 	}
 }

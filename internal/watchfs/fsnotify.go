@@ -28,7 +28,7 @@ func (wfs *FileWatcher) WatchFsNotify(
 	resetCh := make(chan struct{}, 1)
 
 	// NEW: pass ctx into debounceLoop
-	go wfs.debounceLoop(ctx, resetCh, events)
+	go wfs.debounceLoop(ctx, dir, file, resetCh, events)
 
 	for {
 		select {

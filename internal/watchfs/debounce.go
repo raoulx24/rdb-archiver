@@ -2,6 +2,7 @@
 
 import (
 	"context"
+	"path/filepath"
 	"time"
 )
 
@@ -9,6 +10,8 @@ import (
 // Both debounce and stability windows are restartable on new resets.
 func (wfs *FileWatcher) debounceLoop(
 	ctx context.Context,
+	dir string,
+	file string,
 	resetCh <-chan struct{},
 	events chan<- struct{},
 ) {
@@ -78,6 +81,10 @@ func (wfs *FileWatcher) debounceLoop(
 				case <-stabTimer.C:
 					// Stability achieved.
 				}
+			}
+
+			if !wfs.isWatchedFileChanged(filepath.Join(dir, file)) {
+				return
 			}
 
 			// Emit event unless shutting down.

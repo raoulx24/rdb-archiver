@@ -13,7 +13,6 @@ func (sw *Watcher) checkForNewSnapshot() {
 	dir := sw.cfg.Path
 	primary := sw.cfg.PrimaryName
 	aux := append([]string(nil), sw.cfg.AuxNames...)
-	last := sw.lastModTime
 	sw.mu.RUnlock()
 
 	path := filepath.Join(dir, primary)
@@ -24,9 +23,6 @@ func (sw *Watcher) checkForNewSnapshot() {
 	}
 
 	mod := info.ModTime()
-	if !mod.After(last) {
-		return // no new snapshot
-	}
 
 	snap := snapshot.Snapshot{
 		Dir:     dir,

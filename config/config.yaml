@@ -42,4 +42,4 @@ health:
 
 configReload:
   enabled: true
-  method: "fsnotify"
+  method: "poll"

@@ -2,12 +2,15 @@
 
 import (
 	"context"
+	"path/filepath"
 	"time"
 )
 
 // WatchPolling emits events at a fixed interval.
 func (wfs *FileWatcher) WatchPolling(
 	ctx context.Context,
+	dir string,
+	file string,
 	events chan<- struct{},
 ) error {
 	wfs.logg.Info("starting watch fs - polling mode", "pollInterval", wfs.pollInterval)
@@ -19,7 +22,9 @@ func (wfs *FileWatcher) WatchPolling(
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			events <- struct{}{}
+			if wfs.isWatchedFileChanged(filepath.Join(dir, file)) {
+				events <- struct{}{}
+			}
 		}
 	}
 }

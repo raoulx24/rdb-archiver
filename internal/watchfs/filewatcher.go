@@ -8,7 +8,7 @@ import (
 	"github.com/raoulx24/rdb-archiver/internal/logging"
 )
 
-// FileWatcher emits change events for a file using fsnotify or polling.
+// FileWatcher emits change events for a file using fsnotify or polling
 type FileWatcher struct {
 	mu              sync.RWMutex
 	cfg             Config
@@ -16,6 +16,7 @@ type FileWatcher struct {
 	debounceWindow  time.Duration
 	stabilityWindow time.Duration
 	pollInterval    time.Duration
+	lastModTime     map[string]time.Time
 }
 
 // New creates a FileWatcher from config values.
@@ -44,6 +45,7 @@ func New(cfg Config, log logging.Logger) (*FileWatcher, error) {
 		debounceWindow:  debounce,
 		pollInterval:    interval,
 		stabilityWindow: stability,
+		lastModTime:     make(map[string]time.Time),
 	}, nil
 }
 

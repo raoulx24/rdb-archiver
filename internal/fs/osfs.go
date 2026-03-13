@@ -70,6 +70,9 @@ func (o *OSFS) CreateCompressedTar(ctx context.Context, srcDir string, files []s
 
 func (o *OSFS) UpdateConfig(cfg Config) {
 	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.cfg == cfg {
+		return
+	}
 	o.cfg = cfg
-	o.mu.Unlock()
 }

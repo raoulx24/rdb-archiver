@@ -80,7 +80,9 @@ func (w *Worker) Handle(ctx context.Context, snap snapshot.Snapshot) error {
 func (w *Worker) UpdateConfig(cfg Config) {
 	w.logg.Debug("uppdating config")
 	w.mu.Lock()
-	w.cfg = cfg
+	if !isSameConfig(cfg, w.cfg) {
+		w.cfg = cfg
+	}
 	w.mu.Unlock()
 
 	w.updateRetentionRules()

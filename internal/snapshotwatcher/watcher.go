@@ -97,11 +97,11 @@ func (sw *Watcher) consumeEvents(ctx context.Context, events <-chan struct{}) {
 }
 
 // CurrentConfig returns a copy of the current config.
-func (sw *Watcher) CurrentConfig() Config {
-	sw.mu.RLock()
-	defer sw.mu.RUnlock()
-	return sw.cfg
-}
+//func (sw *Watcher) CurrentConfig() Config {
+//	sw.mu.RLock()
+//	defer sw.mu.RUnlock()
+//	return sw.cfg
+//}
 
 func (sw *Watcher) IsAlive(maxSilence time.Duration) bool {
 	sw.mu.RLock()

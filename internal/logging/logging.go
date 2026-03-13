@@ -22,6 +22,7 @@ type SlogLogger struct {
 	mu      *sync.RWMutex
 	handler *slog.Handler
 	attrs   []any
+	cfg     Config
 }
 
 // NewSlogLogger creates a new SlogLogger with specified level and JSON/text output.
@@ -42,6 +43,9 @@ func NewSlogLogger(cfg Config) *SlogLogger {
 func (l *SlogLogger) UpdateConfig(cfg Config) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.cfg == cfg {
+		return
+	}
 	l.applyConfig(cfg)
 }
 
@@ -94,6 +98,8 @@ func (l *SlogLogger) applyConfig(cfg Config) {
 	}
 
 	*l.handler = handler
+
+	l.cfg = cfg
 }
 
 func (l *SlogLogger) log(level slog.Level, msg string, args ...any) {

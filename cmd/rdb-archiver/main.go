@@ -20,11 +20,10 @@ import (
 )
 
 var (
-    Version   = "dev"
-    Commit    = "none"
-    BuildDate = "unknown"
+	Version   = "dev"
+	Commit    = "none"
+	BuildDate = "unknown"
 )
-
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -74,13 +73,12 @@ func main() {
 			logg,
 			func(newCfg *config.Config) {
 				logg.UpdateConfig(newCfg.Logging)
-				fw.UpdateConfig(newCfg.WatchFS)
+				_ = fw.UpdateConfig(newCfg.WatchFS)
 				osfs.UpdateConfig(newCfg.FS)
 				mainWorker.UpdateConfig(newCfg.Destination)
 
-				oldSnapCfg := snapWatcher.CurrentConfig()
-				snapWatcher.UpdateConfig(newCfg.Source)
-				if snapWatcher.NeedsRestart(oldSnapCfg, newCfg.Source) {
+				if snapWatcher.NeedsRestart(newCfg.Source) {
+					snapWatcher.UpdateConfig(newCfg.Source)
 					swm.Start(ctx)
 				}
 			},

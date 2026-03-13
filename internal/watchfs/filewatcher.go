@@ -68,11 +68,14 @@ func (wfs *FileWatcher) UpdateConfig(cfg Config) error {
 	}
 
 	wfs.mu.Lock()
+	defer wfs.mu.Unlock()
+	if wfs.cfg == cfg {
+		return nil
+	}
 	wfs.cfg = cfg
 	wfs.debounceWindow = debounce
 	wfs.pollInterval = interval
 	wfs.stabilityWindow = stability
-	wfs.mu.Unlock()
 
 	return nil
 }

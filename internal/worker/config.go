@@ -34,3 +34,14 @@ func (c *RetentionConfig) ApplyDefaults() {
 	}
 	// Rules slice can stay empty; no default needed.
 }
+
+func isSameConfig(oldCfg, newCfg Config) bool {
+	if oldCfg.Root != newCfg.Root ||
+		oldCfg.SubDir != newCfg.SubDir ||
+		oldCfg.SnapshotSubdir != newCfg.SnapshotSubdir ||
+		oldCfg.Retention.LastCount != newCfg.Retention.LastCount ||
+		oldCfg.Retention.RemoveUnknownFolders != newCfg.Retention.RemoveUnknownFolders {
+		return false
+	}
+	return true
+}

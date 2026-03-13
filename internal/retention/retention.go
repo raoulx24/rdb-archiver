@@ -43,6 +43,9 @@ func (r *Retention) UpdateConfig(config Config) {
 	r.logg.Debug("updating config")
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if isSameConfig(r.cfg, config) {
+		return
+	}
 	r.cfg = config
 }
 

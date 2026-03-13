@@ -214,15 +214,48 @@ func parseTimestamp(name string) (time.Time, error) {
 
 // prevCron returns the most recent cron boundary before t.
 func prevCron(s cron.Schedule, t time.Time) time.Time {
-	// Start far enough in the past to guarantee we cross the boundary
-	cur := t.Add(-48 * time.Hour)
+	// We want to find the previous cron execution before time t.
+	// The cron API only gives us: Next(x) -> first execution strictly after x
+	// There is no Prev(), so we must infer it.
+	//
+	// Key observation:
+	// If x1 < x2 then Next(x1) <= Next(x2)
+	// This means Next() is MONOTONIC with respect to its input time.
+	// Because of this, the predicate: Next(x) < t
+	// is also monotonic:
+	//     true  true  true  true  false  false
+	//      ^ boundary where previous execution occurs
+	// That means we can use binary search to find the boundary.
 
-	// Move forward until the next boundary is >= t
-	for {
-		next := s.Next(cur)
-		if !next.Before(t) {
-			return cur
+	// Lower bound of search window.
+	// We go back 5 years to guarantee we are before the previous run.
+	// This covers even rare schedules like Feb 29 (every 4 years).
+	lo := t.AddDate(-5, 0, 0)
+
+	// Upper bound: we know Next(t) is always >= t,
+	// so the boundary must be somewhere before t.
+	hi := t
+
+	// Binary search until the window is very small.
+	// One minute resolution is enough because cron schedules
+	// cannot fire more frequently than that.
+	for hi.Sub(lo) > time.Minute {
+		// Midpoint between lo and hi
+		mid := lo.Add(hi.Sub(lo) / 2)
+
+		// Check if the next run after mid is still before t
+		if s.Next(mid).Before(t) {
+			// mid is still before the boundary
+			// move the lower bound forward
+			lo = mid
+		} else {
+			// mid is after (or exactly at) the boundary
+			// move the upper bound backward
+			hi = mid
 		}
-		cur = next
 	}
+
+	// At this point we have: Next(lo) < t and Next(hi) >= t
+	// So the previous execution must be Next(lo).
+	return s.Next(lo)
 }

@@ -81,8 +81,8 @@ spec:
               path: /ready
               port: liveness
               scheme: HTTP
-            initialDelaySeconds: 10
-            periodSeconds: 30
+            initialDelaySeconds: 0
+            periodSeconds: 10
             successThreshold: 1
             timeoutSeconds: 3
           livenessProbe:

@@ -3,12 +3,16 @@
 import (
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/raoulx24/rdb-archiver/internal/snapshot"
 )
 
 // checkForNewSnapshot checks for a new snapshot and emits a job if needed.
 func (sw *Watcher) checkForNewSnapshot() {
+	start := time.Now()
+	defer sw.metrics.ObserveDetectionDuration(time.Since(start))
+
 	sw.mu.RLock()
 	dir := sw.cfg.Path
 	primary := sw.cfg.PrimaryName
@@ -19,6 +23,7 @@ func (sw *Watcher) checkForNewSnapshot() {
 
 	info, err := os.Stat(path)
 	if err != nil {
+		sw.metrics.InvalidSnapshot()
 		return // file missing or unreadable
 	}
 
@@ -29,6 +34,7 @@ func (sw *Watcher) checkForNewSnapshot() {
 		Primary: snapshot.FromFileInfo(path, info),
 		Aux:     sw.loadAux(dir, aux),
 	}
+	sw.metrics.SnapshotParsed()
 
 	sw.mu.Lock()
 	sw.lastModTime = mod
@@ -36,4 +42,5 @@ func (sw *Watcher) checkForNewSnapshot() {
 
 	sw.logg.Info("snapshot detected", "path", path)
 	sw.mb.Put(snapshot.Job{Snap: snap})
+	sw.metrics.JobEnqueued()
 }

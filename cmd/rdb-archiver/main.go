@@ -55,7 +55,7 @@ func main() {
 	metricsReg := prometheus.NewRegistry()
 	//pipelineMetrics := prometheus.NewPipelineMetrics(metricsReg)
 	workerMetrics := prometheus.NewWorkerMetrics(metricsReg)
-	//snapshotWatcherMetrics := prometheus.NewSnapshotWatcherMetrics(metricsReg)
+	snapshotWatcherMetrics := prometheus.NewSnapshotWatcherMetrics(metricsReg)
 	//mailboxMetrics := prometheus.NewMailboxMetrics(metricsReg)
 	retentionMetrics := prometheus.NewRetentionMetrics(metricsReg)
 
@@ -83,7 +83,7 @@ func main() {
 	mainWorker := worker.New(cfg.Destination, logg, workerMetrics, ret, mb, osfs)
 	go mainWorker.Start(ctx)
 
-	snapWatcher := snapshotwatcher.New(cfg.Source, fw, mb, logg)
+	snapWatcher := snapshotwatcher.New(cfg.Source, snapshotWatcherMetrics, fw, mb, logg)
 	swm := NewSnapshotWatcherManager(snapWatcher, logg)
 	swm.Start(ctx)
 

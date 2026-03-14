@@ -15,6 +15,7 @@ import (
 type Watcher struct {
 	mu            sync.RWMutex
 	cfg           Config
+	metrics       Metrics
 	lastModTime   time.Time
 	events        chan struct{}
 	fileWatch     *watchfs.FileWatcher
@@ -27,6 +28,7 @@ type Watcher struct {
 // New creates a snapshotwatcher watcher with initial config.
 func New(
 	cfg Config,
+	metrics Metrics,
 	fw *watchfs.FileWatcher,
 	mb *mailbox.Mailbox[snapshot.Job],
 	log logging.Logger,
@@ -35,6 +37,7 @@ func New(
 	logg.Debug("creating snapshot watcher")
 	return &Watcher{
 		cfg:           cfg,
+		metrics:       metrics,
 		fileWatch:     fw,
 		mb:            mb,
 		lastHeartbeat: time.Now(),
@@ -88,6 +91,7 @@ func (sw *Watcher) consumeEvents(ctx context.Context, events <-chan struct{}) {
 				sw.logg.Info("events channel closed, stopping event loop")
 				return
 			}
+			sw.metrics.EventReceived()
 			sw.mu.Lock()
 			sw.lastHeartbeat = time.Now()
 			sw.mu.Unlock()
@@ -95,13 +99,6 @@ func (sw *Watcher) consumeEvents(ctx context.Context, events <-chan struct{}) {
 		}
 	}
 }
-
-// CurrentConfig returns a copy of the current config.
-//func (sw *Watcher) CurrentConfig() Config {
-//	sw.mu.RLock()
-//	defer sw.mu.RUnlock()
-//	return sw.cfg
-//}
 
 func (sw *Watcher) IsAlive(maxSilence time.Duration) bool {
 	sw.mu.RLock()

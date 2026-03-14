@@ -53,10 +53,9 @@ func main() {
 
 	// metrics server - prometheus
 	metricsReg := prometheus.NewRegistry()
-	//pipelineMetrics := prometheus.NewPipelineMetrics(metricsReg)
 	workerMetrics := prometheus.NewWorkerMetrics(metricsReg)
 	snapshotWatcherMetrics := prometheus.NewSnapshotWatcherMetrics(metricsReg)
-	//mailboxMetrics := prometheus.NewMailboxMetrics(metricsReg)
+	mailboxMetrics := prometheus.NewMailboxMetrics(metricsReg)
 	retentionMetrics := prometheus.NewRetentionMetrics(metricsReg)
 
 	metricsHandler := metricsReg.Handler()
@@ -71,7 +70,7 @@ func main() {
 	// metrics server - end of
 
 	osfs := fs.New(cfg.FS, logg)
-	mb := mailbox.New[snapshot.Job]()
+	mb := mailbox.New[snapshot.Job](mailboxMetrics)
 	ret := retention.New(logg, retentionMetrics)
 
 	fw, err := watchfs.New(cfg.WatchFS, logg)
@@ -123,6 +122,8 @@ func main() {
 	defer cancelShutdown()
 
 	_ = metricsSrv.Shutdown(shutdownCtx)
+
+	mb.Stop()
 
 	stdLog.Println("exit complete")
 }

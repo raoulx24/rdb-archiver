@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/raoulx24/rdb-archiver/internal/fs"
 	"github.com/raoulx24/rdb-archiver/internal/logging"
@@ -18,6 +19,7 @@ import (
 type Worker struct {
 	mu        sync.RWMutex
 	cfg       Config
+	metrics   Metrics
 	fs        fs.FS
 	logg      logging.Logger
 	retention *retention.Retention
@@ -25,11 +27,12 @@ type Worker struct {
 }
 
 // New creates a worker using destination config and mailbox.
-func New(cfg Config, log logging.Logger, r *retention.Retention, mb *mailbox.Mailbox[snapshot.Job], filesystem fs.FS) *Worker {
+func New(cfg Config, log logging.Logger, metrics Metrics, r *retention.Retention, mb *mailbox.Mailbox[snapshot.Job], filesystem fs.FS) *Worker {
 	logg := log.With("pkg", "worker")
 	logg.Debug("creating worker")
 	return &Worker{
 		cfg:       cfg,
+		metrics:   metrics,
 		fs:        filesystem,
 		logg:      logg,
 		retention: r,
@@ -49,9 +52,16 @@ func (w *Worker) Start(ctx context.Context) {
 			w.logg.Info("worker stopped")
 			return
 		}
+		start := time.Now()
+
 		if err := w.Handle(ctx, job.Snap); err != nil {
+			w.metrics.JobFailed()
 			w.logg.Error("snapshot handle failed", "error", err)
+		} else {
+			w.metrics.JobProcessed()
 		}
+
+		w.metrics.ObserveJobProcessingDuration(time.Since(start))
 	}
 }
 
@@ -121,6 +131,11 @@ func (w *Worker) writeSnapshot(ctx context.Context, snap snapshot.Snapshot) (str
 	if err := w.fs.CreateCompressedTar(ctx, snap.Dir, files, tmpArchive); err != nil {
 		_ = w.fs.RemoveAll(tmpArchive)
 		return "", fmt.Errorf("creating compressed archive: %w", err)
+	}
+
+	// Get file size
+	if info, err := w.fs.Stat(tmpArchive); err == nil {
+		w.metrics.AddBytesWritten(info.Size)
 	}
 
 	// Finalize atomically: remove existing final archive if present, then rename.

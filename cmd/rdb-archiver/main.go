@@ -3,15 +3,18 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/raoulx24/rdb-archiver/internal/config"
 	"github.com/raoulx24/rdb-archiver/internal/fs"
 	"github.com/raoulx24/rdb-archiver/internal/health"
 	"github.com/raoulx24/rdb-archiver/internal/logging"
 	"github.com/raoulx24/rdb-archiver/internal/mailbox"
+	"github.com/raoulx24/rdb-archiver/internal/metrics/prometheus"
 	"github.com/raoulx24/rdb-archiver/internal/retention"
 	"github.com/raoulx24/rdb-archiver/internal/snapshot"
 	"github.com/raoulx24/rdb-archiver/internal/snapshotwatcher"
@@ -48,9 +51,28 @@ func main() {
 		cancel()
 	}()
 
+	// metrics server - prometheus
+	metricsReg := prometheus.NewRegistry()
+	//pipelineMetrics := prometheus.NewPipelineMetrics(metricsReg)
+	workerMetrics := prometheus.NewWorkerMetrics(metricsReg)
+	//snapshotWatcherMetrics := prometheus.NewSnapshotWatcherMetrics(metricsReg)
+	//mailboxMetrics := prometheus.NewMailboxMetrics(metricsReg)
+	retentionMetrics := prometheus.NewRetentionMetrics(metricsReg)
+
+	metricsHandler := metricsReg.Handler()
+	metricsSrv := prometheus.NewServer(":9090", metricsHandler)
+
+	go func() {
+		logg.Info("starting metrics server", "addr", ":9090")
+		if err := metricsSrv.Start(); err != nil && err != http.ErrServerClosed {
+			logg.Error("metrics server stopped", "error", err)
+		}
+	}()
+	// metrics server - end of
+
 	osfs := fs.New(cfg.FS, logg)
 	mb := mailbox.New[snapshot.Job]()
-	ret := retention.New(logg)
+	ret := retention.New(logg, retentionMetrics)
 
 	fw, err := watchfs.New(cfg.WatchFS, logg)
 	if err != nil {
@@ -58,7 +80,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	mainWorker := worker.New(cfg.Destination, logg, ret, mb, osfs)
+	mainWorker := worker.New(cfg.Destination, logg, workerMetrics, ret, mb, osfs)
 	go mainWorker.Start(ctx)
 
 	snapWatcher := snapshotwatcher.New(cfg.Source, fw, mb, logg)
@@ -93,7 +115,14 @@ func main() {
 			logg.Error("health server stopped", "error", err)
 		}
 	}()
+	// TODO: implement shutdown of health server
 
 	<-ctx.Done()
+
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelShutdown()
+
+	_ = metricsSrv.Shutdown(shutdownCtx)
+
 	stdLog.Println("exit complete")
 }

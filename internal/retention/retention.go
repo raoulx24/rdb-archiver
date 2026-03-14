@@ -17,9 +17,10 @@ import (
 
 // Retention manages promotion and cleanup rules.
 type Retention struct {
-	mu   sync.RWMutex
-	cfg  Config
-	logg logging.Logger
+	mu      sync.RWMutex
+	cfg     Config
+	logg    logging.Logger
+	metrics Metrics
 }
 
 type Rule struct {
@@ -29,12 +30,13 @@ type Rule struct {
 }
 
 // New creates a retention engine from cfg.
-func New(log logging.Logger) *Retention {
+func New(log logging.Logger, metrics Metrics) *Retention {
 	logg := log.With("pkg", "retention")
 	logg.Debug("creating retention")
 	return &Retention{
-		cfg:  Config{},
-		logg: logg,
+		cfg:     Config{},
+		metrics: metrics,
+		logg:    logg,
 	}
 }
 
@@ -53,6 +55,11 @@ func (r *Retention) UpdateConfig(config Config) {
 // Apply promotes the new snapshotwatcher and prunes old ones.
 func (r *Retention) Apply(ctx context.Context, filesystem fs.FS, archiveRoot, newSnapshotFile string) error {
 	r.logg.Debug("retention engine is starting to apply rules")
+
+	start := time.Now()
+	r.metrics.RetentionRun()
+	defer r.metrics.ObserveRetentionRunDuration(time.Since(start))
+
 	r.mu.RLock()
 	rules := append([]Rule(nil), r.cfg.Rules...)
 	removeUnknownFolders := r.cfg.RemoveUnknownFolders
@@ -68,7 +75,11 @@ func (r *Retention) Apply(ctx context.Context, filesystem fs.FS, archiveRoot, ne
 
 		if strings.TrimSpace(rule.Cron) != "" {
 			if err := r.promote(ctx, filesystem, rule, ruleDir, newSnapshotFile, ts); err != nil {
+				r.metrics.SnapshotProcessed(rule.Name, "error")
+
 				r.logg.Error("promote failed", "ruleName", rule.Name, "error", err)
+			} else {
+				r.metrics.SnapshotProcessed(rule.Name, "success")
 			}
 		}
 
@@ -147,6 +158,8 @@ func (r *Retention) cleanup(filesystem fs.FS, rule Rule, ruleDir string) error {
 		r.logg.Info("removing old snapshot in cron folder", "rule", rule.Name, "cron", rule.Cron, "snapshot", name)
 		if err := filesystem.RemoveAll(full); err != nil {
 			r.logg.Warn("removal of file failed", "rule", rule.Name, "snapshot", name, "error", err)
+		} else {
+			r.metrics.SnapshotDeleted(rule.Name)
 		}
 	}
 

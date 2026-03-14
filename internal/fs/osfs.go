@@ -4,18 +4,24 @@ import (
 	"context"
 	"os"
 	"sync"
+
+	"github.com/raoulx24/rdb-archiver/internal/logging"
 )
 
 type OSFS struct {
-	cfg Config
-	mu  sync.RWMutex
+	cfg  Config
+	logg logging.Logger
+	mu   sync.RWMutex
 }
 
 // the concrete implementation of FS backed by the local OS filesystem.
 // Platform-specific details (such as inode extraction) are handled in build-tagged files.
 
-func New(config Config) *OSFS {
-	return &OSFS{cfg: config}
+func New(config Config, log logging.Logger) *OSFS {
+	return &OSFS{
+		cfg:  config,
+		logg: log.With("pkg", "fs"),
+	}
 }
 
 func (o *OSFS) Stat(path string) (FileInfo, error) {
@@ -75,4 +81,5 @@ func (o *OSFS) UpdateConfig(cfg Config) {
 		return
 	}
 	o.cfg = cfg
+	o.logg.Info("config updated")
 }

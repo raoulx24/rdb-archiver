@@ -47,6 +47,7 @@ func (r *Retention) UpdateConfig(config Config) {
 		return
 	}
 	r.cfg = config
+	r.logg.Info("config updated")
 }
 
 // Apply promotes the new snapshotwatcher and prunes old ones.

@@ -13,6 +13,7 @@ func (sw *Watcher) UpdateConfig(cfg Config) {
 		return
 	}
 	sw.cfg = cfg
+	sw.logg.Info("config updated")
 }
 
 // NeedsRestart reports whether watcher must be restarted for config change.

@@ -47,6 +47,7 @@ func (l *SlogLogger) UpdateConfig(cfg Config) {
 		return
 	}
 	l.applyConfig(cfg)
+	l.Info("config updated", "pkg", "logger")
 }
 
 // Debug logs a debug message with optional key/value fields.

@@ -51,7 +51,6 @@ func New(cfg Config, log logging.Logger) (*FileWatcher, error) {
 
 // UpdateConfig hot‑reloads timing parameters safely.
 func (wfs *FileWatcher) UpdateConfig(cfg Config) error {
-	wfs.logg.Debug("updating config")
 	debounce, err := time.ParseDuration(cfg.FSNotify.DebounceWindow)
 	if err != nil {
 		return err
@@ -76,6 +75,8 @@ func (wfs *FileWatcher) UpdateConfig(cfg Config) error {
 	wfs.debounceWindow = debounce
 	wfs.pollInterval = interval
 	wfs.stabilityWindow = stability
+
+	wfs.logg.Info("config updated")
 
 	return nil
 }

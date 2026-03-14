@@ -1,6 +1,8 @@
 ﻿package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"regexp"
@@ -19,12 +21,14 @@ func expandEnvVars(s string) string {
 	})
 }
 
-func Load(path string) (*Config, error) {
+func Load(path string) (*Config, string, error) {
 	// read raw YAML file
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading config file: %w", err)
+		return nil, "", fmt.Errorf("reading config file: %w", err)
 	}
+
+	hash := SHA256Bytes(data)
 
 	// expand $(ENV_VAR) placeholders
 	expanded := expandEnvVars(string(data))
@@ -32,10 +36,10 @@ func Load(path string) (*Config, error) {
 	// unmarshal into struct
 	var cfg Config
 	if err := yaml.Unmarshal([]byte(expanded), &cfg); err != nil {
-		return nil, fmt.Errorf("unmarshalling yaml: %w", err)
+		return nil, "", fmt.Errorf("unmarshalling yaml: %w", err)
 	}
 
-	return &cfg, nil
+	return &cfg, hash, nil
 }
 
 func (c *Config) ApplyDefaults() {
@@ -52,4 +56,9 @@ func (rc *ReloadConfig) ApplyDefaults() {
 	if rc.Method == "" {
 		rc.Method = "fsnotify"
 	}
+}
+
+func SHA256Bytes(b []byte) string {
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
 }

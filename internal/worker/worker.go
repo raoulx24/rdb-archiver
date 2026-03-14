@@ -82,6 +82,7 @@ func (w *Worker) UpdateConfig(cfg Config) {
 	w.mu.Lock()
 	if !isSameConfig(cfg, w.cfg) {
 		w.cfg = cfg
+		w.logg.Info("config updated")
 	}
 	w.mu.Unlock()
 

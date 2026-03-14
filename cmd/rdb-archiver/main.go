@@ -32,7 +32,7 @@ func main() {
 	configFile := "config/config.yaml"
 	stdLog := log.New(os.Stdout, "", log.LstdFlags)
 
-	cfg, err := config.Load(configFile)
+	cfg, fileHash, err := config.Load(configFile)
 	if err != nil {
 		stdLog.Fatalf("failed to load config: %v", err)
 	}
@@ -48,7 +48,7 @@ func main() {
 		cancel()
 	}()
 
-	osfs := fs.New(cfg.FS)
+	osfs := fs.New(cfg.FS, logg)
 	mb := mailbox.New[snapshot.Job]()
 	ret := retention.New(logg)
 
@@ -68,6 +68,7 @@ func main() {
 	if cfg.ConfigReload.Enabled {
 		reloader := NewConfigReloader(
 			configFile,
+			fileHash,
 			cfg.ConfigReload.Method,
 			fw,
 			logg,

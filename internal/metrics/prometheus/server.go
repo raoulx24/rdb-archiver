@@ -2,8 +2,8 @@
 
 import (
 	"context"
+	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 )
 
@@ -27,7 +27,7 @@ func New(config Config, handler http.Handler) Server {
 }
 
 func (s *promServer) Start(ctx context.Context) error {
-	addr := ":" + strconv.FormatUint(uint64(s.cfg.Port), 10)
+	addr := fmt.Sprintf(":%d", s.cfg.Port)
 
 	srv := &http.Server{
 		Addr:              addr,

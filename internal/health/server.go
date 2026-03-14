@@ -2,8 +2,8 @@
 
 import (
 	"context"
+	"fmt"
 	"net/http"
-	"strconv"
 	"sync"
 	"time"
 
@@ -23,7 +23,7 @@ func New(config Config, watcher *snapshotwatcher.Watcher) *Server {
 
 func (s *Server) Start(ctx context.Context) error {
 	s.mu.RLock()
-	addr := ":" + strconv.FormatUint(uint64(s.cfg.Port), 10)
+	addr := fmt.Sprintf(":%d", s.cfg.Port)
 	s.mu.RUnlock()
 
 	mux := http.NewServeMux()

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -56,8 +57,9 @@ func main() {
 	mailboxMetrics := prometheus.NewMailboxMetrics(metricsReg)
 	retentionMetrics := prometheus.NewRetentionMetrics(metricsReg)
 
-	metricsHandler := metricsReg.Handler()
-	metricsSrv := prometheus.New(cfg.Prometheus, metricsHandler)
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", metricsReg.Handler())
+	metricsSrv := prometheus.New(cfg.Prometheus, mux)
 
 	go func() {
 		logg.Info("starting metrics server", "addr", ":9090")

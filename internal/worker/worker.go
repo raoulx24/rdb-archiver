@@ -45,7 +45,7 @@ func New(cfg Config, log logging.Logger, metrics Metrics, r *retention.Retention
 // Start runs the worker loop using mailbox semantics.
 func (w *Worker) Start(ctx context.Context) {
 	w.logg.Info("starting worker")
-	w.updateRetentionRules()
+	w.updateRetentionRules(w.cfg)
 	for {
 		job, ok := w.mb.Take(ctx)
 		if !ok {
@@ -96,7 +96,7 @@ func (w *Worker) UpdateConfig(cfg Config) {
 	}
 	w.mu.Unlock()
 
-	w.updateRetentionRules()
+	w.updateRetentionRules(cfg)
 }
 
 // writeSnapshot creates a tar+compressed archive for all snapshot files atomically.
@@ -154,16 +154,16 @@ func (w *Worker) writeSnapshot(ctx context.Context, snap snapshot.Snapshot) (str
 }
 
 // updateRetentionRules adds to the retention rules the snapshotwatcher one
-func (w *Worker) updateRetentionRules() {
+func (w *Worker) updateRetentionRules(cfg Config) {
 	w.logg.Debug("entering Worker.updateRetentionRules")
 	w.mu.RLock()
 	mainRule := retention.Rule{
-		Name:  w.cfg.SnapshotSubdir,
+		Name:  cfg.SnapshotSubdir,
 		Cron:  "",
-		Count: w.cfg.Retention.LastCount,
+		Count: cfg.Retention.LastCount,
 	}
-	updated := append([]retention.Rule{mainRule}, w.cfg.Retention.Rules...)
-	removeUnknownFolders := w.cfg.Retention.RemoveUnknownFolders
+	updated := append([]retention.Rule{mainRule}, cfg.Retention.Rules...)
+	removeUnknownFolders := cfg.Retention.RemoveUnknownFolders
 	w.mu.RUnlock()
 	w.retention.UpdateConfig(retention.Config{RemoveUnknownFolders: removeUnknownFolders, Rules: updated})
 }

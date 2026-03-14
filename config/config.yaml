@@ -40,6 +40,10 @@ logging:
 health:
   port: 8080
 
+prometheus:
+  enabled: true
+  port: 9090
+
 configReload:
   enabled: true
   method: "poll"

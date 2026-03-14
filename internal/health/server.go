@@ -23,7 +23,7 @@ func New(config Config, watcher *snapshotwatcher.Watcher) *Server {
 
 func (s *Server) Start(ctx context.Context) error {
 	s.mu.RLock()
-	addr := ":" + strconv.FormatUint(uint64(s.cfg.port), 10)
+	addr := ":" + strconv.FormatUint(uint64(s.cfg.Port), 10)
 	s.mu.RUnlock()
 
 	mux := http.NewServeMux()
@@ -40,7 +40,11 @@ func (s *Server) Start(ctx context.Context) error {
 		_ = s.srv.Shutdown(shutdownCtx)
 	}()
 
-	return s.srv.ListenAndServe()
+	err := s.srv.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	return nil
 }
 
 func (s *Server) ready(w http.ResponseWriter, r *http.Request) {

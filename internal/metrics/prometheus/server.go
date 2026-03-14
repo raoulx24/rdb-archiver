@@ -3,27 +3,50 @@
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"time"
 )
 
-type Server struct {
-	srv *http.Server
+type Server interface {
+	Start(ctx context.Context) error
 }
 
-func NewServer(addr string, handler http.Handler) *Server {
-	return &Server{
-		srv: &http.Server{
-			Addr:              addr,
-			Handler:           handler,
-			ReadHeaderTimeout: 5 * time.Second,
-		},
+type promServer struct {
+	cfg     Config
+	handler http.Handler
+}
+
+func New(config Config, handler http.Handler) Server {
+	if !config.Enabled {
+		return &noopServer{}
+	}
+	return &promServer{
+		cfg:     config,
+		handler: handler,
 	}
 }
 
-func (s *Server) Start() error {
-	return s.srv.ListenAndServe()
-}
+func (s *promServer) Start(ctx context.Context) error {
+	addr := ":" + strconv.FormatUint(uint64(s.cfg.Port), 10)
 
-func (s *Server) Shutdown(ctx context.Context) error {
-	return s.srv.Shutdown(ctx)
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           s.handler,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	// graceful shutdown
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	}()
+
+	err := srv.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	return nil
+
 }

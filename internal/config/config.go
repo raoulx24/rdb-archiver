@@ -4,6 +4,7 @@ import (
 	"github.com/raoulx24/rdb-archiver/internal/fs"
 	"github.com/raoulx24/rdb-archiver/internal/health"
 	"github.com/raoulx24/rdb-archiver/internal/logging"
+	"github.com/raoulx24/rdb-archiver/internal/metrics/prometheus"
 	"github.com/raoulx24/rdb-archiver/internal/snapshotwatcher"
 	"github.com/raoulx24/rdb-archiver/internal/watchfs"
 	"github.com/raoulx24/rdb-archiver/internal/worker"
@@ -16,6 +17,7 @@ type Config struct {
 	FS           fs.Config              `yaml:"fs"`
 	Logging      logging.Config         `yaml:"logging"`
 	Health       health.Config          `yaml:"health"`
+	Prometheus   prometheus.Config      `yaml:"prometheus"`
 	ConfigReload ReloadConfig           `yaml:"configReload"`
 }
 

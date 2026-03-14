@@ -49,6 +49,7 @@ func (c *Config) ApplyDefaults() {
 	c.FS.ApplyDefaults()
 	c.Logging.ApplyDefaults()
 	c.Health.ApplyDefaults()
+	c.Prometheus.ApplyDefaults()
 	c.ConfigReload.ApplyDefaults()
 }
 

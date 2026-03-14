@@ -3,11 +3,9 @@ package main
 import (
 	"context"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/raoulx24/rdb-archiver/internal/config"
 	"github.com/raoulx24/rdb-archiver/internal/fs"
@@ -59,11 +57,11 @@ func main() {
 	retentionMetrics := prometheus.NewRetentionMetrics(metricsReg)
 
 	metricsHandler := metricsReg.Handler()
-	metricsSrv := prometheus.NewServer(":9090", metricsHandler)
+	metricsSrv := prometheus.New(cfg.Prometheus, metricsHandler)
 
 	go func() {
 		logg.Info("starting metrics server", "addr", ":9090")
-		if err := metricsSrv.Start(); err != nil && err != http.ErrServerClosed {
+		if err := metricsSrv.Start(ctx); err != nil {
 			logg.Error("metrics server stopped", "error", err)
 		}
 	}()
@@ -110,18 +108,13 @@ func main() {
 
 	healthSrv := health.New(cfg.Health, snapWatcher)
 	go func() {
+		logg.Info("starting health server")
 		if err := healthSrv.Start(ctx); err != nil {
 			logg.Error("health server stopped", "error", err)
 		}
 	}()
-	// TODO: implement shutdown of health server
 
 	<-ctx.Done()
-
-	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancelShutdown()
-
-	_ = metricsSrv.Shutdown(shutdownCtx)
 
 	mb.Stop()
 

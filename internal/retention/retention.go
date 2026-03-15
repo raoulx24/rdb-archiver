@@ -17,11 +17,10 @@ import (
 
 // Retention manages promotion and cleanup rules.
 type Retention struct {
-	mu                sync.RWMutex
-	cfg               Config
-	logg              logging.Logger
-	metrics           Metrics
-	snapshotExtension string
+	mu      sync.RWMutex
+	cfg     Config
+	logg    logging.Logger
+	metrics Metrics
 }
 
 type Rule struct {
@@ -35,10 +34,9 @@ func New(log logging.Logger, metrics Metrics) *Retention {
 	logg := log.With("pkg", "retention")
 	logg.Debug("creating retention", "function", "New")
 	return &Retention{
-		cfg:               Config{},
-		metrics:           metrics,
-		logg:              logg,
-		snapshotExtension: ".tar.zst",
+		cfg:     Config{},
+		metrics: metrics,
+		logg:    logg,
 	}
 }
 
@@ -46,7 +44,7 @@ func New(log logging.Logger, metrics Metrics) *Retention {
 func (r *Retention) UpdateConfig(config Config) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if isSameConfig(r.cfg, config) {
+	if r.isSameConfig(r.cfg, config) {
 		r.logg.Debug("same config, returning", "function", "UpdateConfig")
 		return
 	}
@@ -65,9 +63,10 @@ func (r *Retention) Apply(ctx context.Context, filesystem fs.FS, archiveRoot, ne
 	r.mu.RLock()
 	rules := append([]Rule(nil), r.cfg.Rules...)
 	removeUnknownFolders := r.cfg.RemoveUnknownFolders
+	snapshotExtension := r.cfg.SnapshotExtension
 	r.mu.RUnlock()
 
-	ts, err := parseTimestamp(filepath.Base(newSnapshotFile), r.snapshotExtension)
+	ts, err := parseTimestamp(filepath.Base(newSnapshotFile), snapshotExtension)
 	if err != nil {
 		r.logg.Debug("invalid snapshot timestamp", "function", "Apply", "error", err)
 		return fmt.Errorf("invalid snapshotwatcher timestamp: %w", err)
@@ -78,7 +77,7 @@ func (r *Retention) Apply(ctx context.Context, filesystem fs.FS, archiveRoot, ne
 		ruleDir := filepath.Join(archiveRoot, rule.Name)
 
 		if strings.TrimSpace(rule.Cron) != "" {
-			if err := r.promote(ctx, filesystem, rule, ruleDir, newSnapshotFile, ts); err != nil {
+			if err := r.promote(ctx, filesystem, rule, ruleDir, newSnapshotFile, ts, snapshotExtension); err != nil {
 				r.metrics.SnapshotProcessed(rule.Name, "error")
 
 				r.logg.Error("promote failed", "ruleName", rule.Name, "error", err)
@@ -87,7 +86,7 @@ func (r *Retention) Apply(ctx context.Context, filesystem fs.FS, archiveRoot, ne
 			}
 		}
 
-		if err := r.cleanup(filesystem, rule, ruleDir); err != nil {
+		if err := r.cleanup(filesystem, rule, ruleDir, snapshotExtension); err != nil {
 			r.logg.Error("retention - cleanup failed", "ruleName", rule.Name, "error", err)
 		}
 	}
@@ -102,7 +101,7 @@ func (r *Retention) Apply(ctx context.Context, filesystem fs.FS, archiveRoot, ne
 }
 
 // promote copies the snapshotwatcher if none exists after the cron boundary.
-func (r *Retention) promote(ctx context.Context, filesystem fs.FS, rule Rule, ruleDir, snapFile string, snapTS time.Time) error {
+func (r *Retention) promote(ctx context.Context, filesystem fs.FS, rule Rule, ruleDir, snapFile string, snapTS time.Time, snapshotExtension string) error {
 	r.logg.Debug("processing cron based rule", "function", "promote", "ruleName", rule)
 	sched, err := cron.ParseStandard(rule.Cron)
 	if err != nil {
@@ -118,7 +117,7 @@ func (r *Retention) promote(ctx context.Context, filesystem fs.FS, rule Rule, ru
 		return fmt.Errorf("mkdir: %w", err)
 	}
 
-	existing, err := r.listSnapshotFiles(filesystem, ruleDir)
+	existing, err := r.listSnapshotFiles(filesystem, ruleDir, snapshotExtension)
 	if err != nil {
 		return err
 	}
@@ -126,7 +125,7 @@ func (r *Retention) promote(ctx context.Context, filesystem fs.FS, rule Rule, ru
 	r.logg.Debug("found snapshots", "function", "promote", "ruleName", rule.Name, "count", len(existing))
 
 	for _, name := range existing {
-		ts, err := parseTimestamp(name, r.snapshotExtension)
+		ts, err := parseTimestamp(name, snapshotExtension)
 		if err != nil {
 			return fmt.Errorf("parse timestamp: %w", err)
 		}
@@ -144,7 +143,7 @@ func (r *Retention) promote(ctx context.Context, filesystem fs.FS, rule Rule, ru
 }
 
 // cleanup keeps only the newest N snapshotwatcher directories.
-func (r *Retention) cleanup(filesystem fs.FS, rule Rule, ruleDir string) error {
+func (r *Retention) cleanup(filesystem fs.FS, rule Rule, ruleDir string, snapshotExtension string) error {
 	r.logg.Debug("processing rule", "function", "cleanup", "ruleName", rule.Name)
 	entries, err := filesystem.ReadDir(ruleDir)
 	if err != nil {
@@ -152,7 +151,7 @@ func (r *Retention) cleanup(filesystem fs.FS, rule Rule, ruleDir string) error {
 	}
 	r.logg.Debug("found items in directory", "function", "cleanup", "ruleName", rule.Name, "count", len(entries), "ruleCount", rule.Count)
 
-	files, err := r.listSnapshotFiles(filesystem, ruleDir)
+	files, err := r.listSnapshotFiles(filesystem, ruleDir, snapshotExtension)
 	if err != nil {
 		return fmt.Errorf("listing snapshot files: %w", err)
 	}
@@ -213,7 +212,7 @@ func (r *Retention) removeUnknownFolders(filesystem fs.FS, rules []Rule, ruleDir
 }
 
 // listSnapshotDirs returns timestamps of snapshotwatcher directories.
-func (r *Retention) listSnapshotFiles(filesystem fs.FS, dir string) ([]string, error) {
+func (r *Retention) listSnapshotFiles(filesystem fs.FS, dir string, snapshotExtension string) ([]string, error) {
 	r.logg.Debug("getting snapshot files", "function", "listSnapshotFiles", "directoryName", dir)
 	entries, err := filesystem.ReadDir(dir)
 	if err != nil {
@@ -228,11 +227,11 @@ func (r *Retention) listSnapshotFiles(filesystem fs.FS, dir string) ([]string, e
 		}
 
 		name := ent.Name()
-		if !strings.HasSuffix(name, r.snapshotExtension) {
+		if !strings.HasSuffix(name, snapshotExtension) {
 			continue
 		}
 
-		_, err := parseTimestamp(name, r.snapshotExtension)
+		_, err := parseTimestamp(name, snapshotExtension)
 		if err == nil {
 			out = append(out, name)
 		}

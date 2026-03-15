@@ -26,10 +26,12 @@ type Worker struct {
 	mb        *mailbox.Mailbox[snapshot.Job]
 }
 
+const snapshotExtension = ".tar.zst"
+
 // New creates a worker using destination config and mailbox.
 func New(cfg Config, log logging.Logger, metrics Metrics, r *retention.Retention, mb *mailbox.Mailbox[snapshot.Job], filesystem fs.FS) *Worker {
 	logg := log.With("pkg", "worker")
-	logg.Debug("creating worker")
+	logg.Debug("creating worker", "function", "New")
 	return &Worker{
 		cfg:       cfg,
 		metrics:   metrics,
@@ -39,8 +41,6 @@ func New(cfg Config, log logging.Logger, metrics Metrics, r *retention.Retention
 		mb:        mb,
 	}
 }
-
-// UpdateConfig hot‑reloads destination settings.
 
 // Start runs the worker loop using mailbox semantics.
 func (w *Worker) Start(ctx context.Context) {
@@ -67,9 +67,10 @@ func (w *Worker) Start(ctx context.Context) {
 
 // Handle writes a snapshotwatcher directory and applies retention.
 func (w *Worker) Handle(ctx context.Context, snap snapshot.Snapshot) error {
-	w.logg.Debug("worker starting snapshot handling")
+	w.logg.Debug("worker starting snapshot handling", "function", "Handle")
 	finalDir, err := w.writeSnapshot(ctx, snap)
 	if err != nil {
+		w.logg.Error("failed to write snapshot", "error", err)
 		return err
 	}
 
@@ -78,7 +79,7 @@ func (w *Worker) Handle(ctx context.Context, snap snapshot.Snapshot) error {
 	w.mu.RUnlock()
 
 	root := filepath.Join(dest.Root, dest.SubDir)
-	w.logg.Debug("destination root resolved", "root", root)
+	w.logg.Debug("destination root resolved", "function", "Handle", "root", root)
 
 	if err := w.retention.Apply(ctx, w.fs, root, finalDir); err != nil {
 		w.logg.Error("worker: retention failed", "error", err)
@@ -88,13 +89,13 @@ func (w *Worker) Handle(ctx context.Context, snap snapshot.Snapshot) error {
 }
 
 func (w *Worker) UpdateConfig(cfg Config) {
-	w.logg.Debug("uppdating config")
 	w.mu.Lock()
 	if !isSameConfig(cfg, w.cfg) {
 		w.cfg = cfg
 		w.logg.Info("config updated")
 	}
 	w.mu.Unlock()
+	w.logg.Debug("same config, returning", "function", "UpdateConfig")
 
 	w.updateRetentionRules(cfg)
 }
@@ -111,10 +112,10 @@ func (w *Worker) writeSnapshot(ctx context.Context, snap snapshot.Snapshot) (str
 	ts := snap.Primary.ModTime.UTC().Format("2006-01-02T15-04-05")
 
 	// For now we fix the extension to .tar.zst; algorithm/level are hidden in fs.Config.
-	tmpArchive := filepath.Join(snapDir, ".tmp-"+ts+".tar.zst")
-	finalArchive := filepath.Join(snapDir, ts+".tar.zst")
+	tmpArchive := filepath.Join(snapDir, ".tmp-"+ts+snapshotExtension)
+	finalArchive := filepath.Join(snapDir, ts+snapshotExtension)
 
-	w.logg.Debug("new destinations", "tmpArchive", tmpArchive, "finalArchive", finalArchive)
+	w.logg.Debug("new destinations", "function", "writeSnapshot", "tmpArchive", tmpArchive, "finalArchive", finalArchive)
 
 	if err := w.fs.MkdirAll(snapDir); err != nil {
 		return "", fmt.Errorf("creating snapshot dir: %w", err)
@@ -135,11 +136,13 @@ func (w *Worker) writeSnapshot(ctx context.Context, snap snapshot.Snapshot) (str
 
 	// Get file size
 	if info, err := w.fs.Stat(tmpArchive); err == nil {
+		w.logg.Debug("wrote snapshot archive", "function", "writeSnapshot", "tmpArchive", tmpArchive, "archiveSize", info.Size)
 		w.metrics.AddBytesWritten(info.Size)
 	}
 
 	// Finalize atomically: remove existing final archive if present, then rename.
 	if _, err := w.fs.Stat(finalArchive); err == nil {
+		w.logg.Warn("found existing final archive, removing", "finalArchive", finalArchive)
 		if err := w.fs.RemoveAll(finalArchive); err != nil {
 			return "", fmt.Errorf("failed to remove existing final archive: %w", err)
 		}
@@ -155,7 +158,6 @@ func (w *Worker) writeSnapshot(ctx context.Context, snap snapshot.Snapshot) (str
 
 // updateRetentionRules adds to the retention rules the snapshotwatcher one
 func (w *Worker) updateRetentionRules(cfg Config) {
-	w.logg.Debug("entering Worker.updateRetentionRules")
 	w.mu.RLock()
 	mainRule := retention.Rule{
 		Name:  cfg.SnapshotSubdir,
@@ -165,5 +167,16 @@ func (w *Worker) updateRetentionRules(cfg Config) {
 	updated := append([]retention.Rule{mainRule}, cfg.Retention.Rules...)
 	removeUnknownFolders := cfg.Retention.RemoveUnknownFolders
 	w.mu.RUnlock()
-	w.retention.UpdateConfig(retention.Config{RemoveUnknownFolders: removeUnknownFolders, Rules: updated})
+	ruleNames := []string{}
+	ruleCrons := []string{}
+	ruleCounts := []int{}
+	for _, rule := range updated {
+		ruleNames = append(ruleNames, rule.Name)
+		ruleCrons = append(ruleCrons, rule.Cron)
+		ruleCounts = append(ruleCounts, rule.Count)
+	}
+	w.logg.Debug("updating retention rules", "function", "updateRetentionRules", "removeUnknownFolders",
+		removeUnknownFolders, "ruleNames",
+		ruleNames, "ruleCrons", ruleCrons, "ruleCounts", ruleCounts)
+	w.retention.UpdateConfig(retention.Config{RemoveUnknownFolders: removeUnknownFolders, SnapshotExtension: snapshotExtension, Rules: updated})
 }

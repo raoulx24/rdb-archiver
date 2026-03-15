@@ -17,6 +17,7 @@ func (wfs *FileWatcher) WatchFsNotify(
 
 	fw, err := fsnotify.NewWatcher()
 	if err != nil {
+		wfs.logg.Error("failed to create fsnotify watcher", "error", err)
 		return err
 	}
 	defer fw.Close()
@@ -27,16 +28,16 @@ func (wfs *FileWatcher) WatchFsNotify(
 
 	resetCh := make(chan struct{}, 1)
 
-	// NEW: pass ctx into debounceLoop
 	go wfs.debounceLoop(ctx, dir, file, resetCh, events)
 
 	for {
 		select {
 		case <-ctx.Done():
-			// debounceLoop will exit automatically because it also listens to ctx.Done()
+			wfs.logg.Debug("stopping fsnotify watcher", "function", "WatchFsNotify")
 			return nil
 
 		case ev := <-fw.Events:
+			wfs.logg.Debug("event received", "function", "WatchFsNotify", "fsnotifyEvent", ev)
 			if filepath.Base(ev.Name) != file {
 				continue
 			}
@@ -44,7 +45,7 @@ func (wfs *FileWatcher) WatchFsNotify(
 				continue
 			}
 
-			wfs.logg.Debug("event received", "fsnotifyEvent", ev.Op)
+			wfs.logg.Debug("event received", "function", "WatchFsNotify", "fsnotifyEvent", ev.Op)
 
 			// Non-blocking send to collapse bursts
 			select {

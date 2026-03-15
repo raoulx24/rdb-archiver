@@ -34,7 +34,7 @@ func New(
 	log logging.Logger,
 ) *Watcher {
 	logg := log.With("pkg", "snapshotwatcher")
-	logg.Debug("creating snapshot watcher")
+	logg.Debug("creating snapshot watcher", "function", "New")
 	return &Watcher{
 		cfg:           cfg,
 		metrics:       metrics,
@@ -76,6 +76,7 @@ func (sw *Watcher) Start(ctx context.Context) error {
 func (sw *Watcher) consumeEvents(ctx context.Context, events <-chan struct{}) {
 	ticker := time.NewTicker(sw.timerTick)
 	defer ticker.Stop()
+	sw.logg.Debug("consuming events", "function", "consumeEvents")
 
 	for {
 		select {
@@ -86,6 +87,7 @@ func (sw *Watcher) consumeEvents(ctx context.Context, events <-chan struct{}) {
 			sw.mu.Lock()
 			sw.lastHeartbeat = time.Now()
 			sw.mu.Unlock()
+			sw.logg.Debug("last heartbeat ticker", "function", "consumeEvents")
 		case _, ok := <-events:
 			if !ok {
 				sw.logg.Info("events channel closed, stopping event loop")
@@ -95,6 +97,7 @@ func (sw *Watcher) consumeEvents(ctx context.Context, events <-chan struct{}) {
 			sw.mu.Lock()
 			sw.lastHeartbeat = time.Now()
 			sw.mu.Unlock()
+			sw.logg.Debug("event received", "function", "consumeEvents")
 			sw.checkForNewSnapshot()
 		}
 	}
@@ -102,7 +105,8 @@ func (sw *Watcher) consumeEvents(ctx context.Context, events <-chan struct{}) {
 
 func (sw *Watcher) IsAlive(maxSilence time.Duration) bool {
 	sw.mu.RLock()
-	last := sw.lastHeartbeat
+	elapsedTime := time.Since(sw.lastHeartbeat)
 	sw.mu.RUnlock()
-	return time.Since(last) < maxSilence
+	sw.logg.Debug("queried for is alive", "function", "IsAlive", "elapsedTime", elapsedTime, "maxSilence", maxSilence)
+	return elapsedTime < maxSilence
 }

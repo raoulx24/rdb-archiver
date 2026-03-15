@@ -2,6 +2,7 @@
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -16,7 +17,7 @@ func (wfs *FileWatcher) StartWatchingForFile(
 	file string,
 	events chan<- struct{},
 ) error {
-	wfs.logg.Debug("starting watch fs", "watchFSMode", mode)
+	wfs.logg.Debug("starting file watcher", "watchFSMode", mode, "function", "StartWatchingForFile")
 
 	// detect symlink
 	info, err := os.Lstat(filepath.Join(dir, file))
@@ -40,7 +41,11 @@ func (wfs *FileWatcher) StartWatchingForFile(
 			wfs.logg.Debug("fsnotify supported", "dir", dir)
 			return wfs.WatchFsNotify(ctx, dir, file, events)
 		}
-		wfs.logg.Error("fsnotify disabled, falling back to polling", "reason", res.Reason)
+		if res.IsFatal {
+			wfs.logg.Error("could not assert fs probe", "error", res.Reason)
+			return fmt.Errorf("fatal error in fs probe: %w", res.Reason)
+		}
+		wfs.logg.Warn("fsnotify disabled, falling back to polling", "reason", res.Reason)
 		return wfs.WatchPolling(ctx, dir, file, events)
 
 	default:

@@ -9,7 +9,8 @@ import (
 func (sw *Watcher) UpdateConfig(cfg Config) {
 	sw.mu.Lock()
 	defer sw.mu.Unlock()
-	if isSameConfig(cfg, sw.cfg) {
+	if sw.isSameConfig(cfg, sw.cfg) {
+		sw.logg.Debug("same config, returning", "function", "UpdateConfig")
 		return
 	}
 	sw.cfg = cfg
@@ -21,19 +22,22 @@ func (sw *Watcher) NeedsRestart(newCfg Config) bool {
 	sw.mu.RLock()
 	defer sw.mu.RUnlock()
 	oldCfg := sw.cfg
-	return !isSameConfig(oldCfg, newCfg)
+	sw.logg.Debug("checking if config needs restart", "function", "NeedsRestart")
+	return !sw.isSameConfig(oldCfg, newCfg)
 }
 
-func isSameConfig(oldCfg, newCfg Config) bool {
+func (sw *Watcher) isSameConfig(oldCfg, newCfg Config) bool {
 	// Compare simple fields
 	if oldCfg.WatchMode != newCfg.WatchMode ||
 		oldCfg.Path != newCfg.Path ||
 		oldCfg.PrimaryName != newCfg.PrimaryName {
+		sw.logg.Debug("different configs - fields", "function", "isSameConfig")
 		return false
 	}
 
 	// Compare AuxNames (order-insensitive)
 	if len(oldCfg.AuxNames) != len(newCfg.AuxNames) {
+		sw.logg.Debug("different configs - aux names count", "function", "isSameConfig")
 		return false
 	}
 
@@ -47,5 +51,10 @@ func isSameConfig(oldCfg, newCfg Config) bool {
 	oldJoined := strings.Join(oldAux, "|")
 	newJoined := strings.Join(newAux, "|")
 
-	return oldJoined == newJoined
+	if oldJoined != newJoined {
+		sw.logg.Debug("different configs - aux names", "function", "isSameConfig")
+		return false
+	}
+
+	return true
 }

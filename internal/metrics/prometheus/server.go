@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/raoulx24/rdb-archiver/internal/logging"
 )
 
 type Server interface {
@@ -13,15 +15,20 @@ type Server interface {
 
 type promServer struct {
 	cfg     Config
+	logg    logging.Logger
 	handler http.Handler
 }
 
-func New(config Config, handler http.Handler) Server {
+func New(config Config, log logging.Logger, handler http.Handler) Server {
+	logg := log.With("pkg", "prometheus")
 	if !config.Enabled {
+		logg.Debug("creating no-op server", "function", "New")
 		return &noopServer{}
 	}
+	logg.Debug("creating metrics server", "function", "New")
 	return &promServer{
 		cfg:     config,
+		logg:    logg,
 		handler: handler,
 	}
 }
@@ -43,7 +50,10 @@ func (s *promServer) Start(ctx context.Context) error {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 
+	s.logg.Info("metrics server is starting", "addr", addr)
+
 	err := srv.ListenAndServe()
+	s.logg.Info("metrics server is stopped")
 	if err != nil && err != http.ErrServerClosed {
 		return err
 	}

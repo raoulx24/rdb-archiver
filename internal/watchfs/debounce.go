@@ -19,6 +19,7 @@ func (wfs *FileWatcher) debounceLoop(
 		timer   *time.Timer
 		timerCh <-chan time.Time
 	)
+	wfs.logg.Debug("debounce started", "function", "debounceLoop")
 
 	for {
 		select {
@@ -26,10 +27,12 @@ func (wfs *FileWatcher) debounceLoop(
 			if timer != nil {
 				timer.Stop()
 			}
+			wfs.logg.Debug("debounce stopping", "function", "debounceLoop")
 			return
 
 		case <-resetCh:
 		restart:
+			wfs.logg.Debug("debounce loop starts", "function", "debounceLoop")
 			// Stop old timer if needed.
 			if timer != nil {
 				if !timer.Stop() {
@@ -54,16 +57,20 @@ func (wfs *FileWatcher) debounceLoop(
 			select {
 			case <-ctx.Done():
 				timer.Stop()
+				wfs.logg.Debug("debounce loop - debounce stopping", "function", "debounceLoop")
 				return
 
 			case <-resetCh:
 				// Restart debounce.
+				wfs.logg.Debug("debounce loop restart", "function", "debounceLoop")
 				goto restart
 
 			case <-timerCh:
+				wfs.logg.Debug("debounce loop finished", "function", "debounceLoop")
 				// Debounce window completed; now stability phase.
 			}
 
+			wfs.logg.Debug("stability phase started", "function", "debounceLoop")
 			// Stability phase: must remain quiet for stability duration.
 			if stability > 0 {
 				stabTimer := time.NewTimer(stability)
@@ -71,27 +78,32 @@ func (wfs *FileWatcher) debounceLoop(
 				select {
 				case <-ctx.Done():
 					stabTimer.Stop()
+					wfs.logg.Debug("stability phase - debounce stopping", "function", "debounceLoop")
 					return
 
 				case <-resetCh:
-					// Restart entire cycle.
 					stabTimer.Stop()
+					wfs.logg.Debug("stability phase - debounce loop restart", "function", "debounceLoop")
 					goto restart
 
 				case <-stabTimer.C:
+					wfs.logg.Debug("stability phase finished", "function", "debounceLoop")
 					// Stability achieved.
 				}
 			}
 
 			if !wfs.isWatchedFileChanged(filepath.Join(dir, file)) {
+				wfs.logg.Debug("the file is not changed", "function", "debounceLoop")
 				return
 			}
 
 			// Emit event unless shutting down.
 			select {
 			case <-ctx.Done():
+				wfs.logg.Debug("after stability window - debounce stopping", "function", "debounceLoop")
 				return
 			case events <- struct{}{}:
+				wfs.logg.Debug("file changed event emitted", "function", "debounceLoop")
 			}
 
 			// Reset state.

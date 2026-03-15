@@ -60,10 +60,9 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", metricsReg.Handler())
-	metricsSrv := prometheus.New(cfg.Prometheus, mux)
+	metricsSrv := prometheus.New(cfg.Prometheus, logg, mux)
 
 	go func() {
-		mainLogg.Info("starting metrics server", "addr", ":9090")
 		if err := metricsSrv.Start(ctx); err != nil {
 			mainLogg.Error("metrics server stopped", "error", err)
 		}
@@ -109,11 +108,10 @@ func main() {
 		go reloader.Start(ctx)
 	}
 
-	healthSrv := health.New(cfg.Health, snapWatcher)
+	healthSrv := health.New(cfg.Health, logg, snapWatcher)
 	go func() {
-		logg.Info("starting health server")
 		if err := healthSrv.Start(ctx); err != nil {
-			logg.Error("health server stopped", "error", err)
+			mainLogg.Error("health server stopped", "error", err)
 		}
 	}()
 

@@ -15,8 +15,10 @@ func (sw *Watcher) loadAux(dir string, names []string) []snapshot.Artifact {
 		path := filepath.Join(dir, name)
 		info, err := os.Stat(path)
 		if err != nil {
+			sw.logg.Error("cannot stat aux file", "error", err, "dir", dir, "name", name)
 			continue
 		}
+		sw.logg.Debug("adding aux file to snapshot", "function", "loadAux", "dir", dir, "name", name)
 		out = append(out, snapshot.FromFileInfo(path, info))
 	}
 

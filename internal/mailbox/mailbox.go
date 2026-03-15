@@ -22,9 +22,11 @@ type Mailbox[T any] struct {
 }
 
 // New creates an empty mailbox.
-func New[T any](metrics Metrics, logger logging.Logger) *Mailbox[T] {
+func New[T any](metrics Metrics, log logging.Logger) *Mailbox[T] {
+	logg := log.With("pkg", "mailbox")
+	logg.Debug("creating mailbox", "function", "New")
 	m := &Mailbox[T]{
-		logg:    logger.With("pkg", "mailbox", "function", "New"),
+		logg:    logg,
 		metrics: metrics,
 		stopCh:  make(chan struct{}),
 	}

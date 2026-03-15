@@ -22,7 +22,7 @@ type FileWatcher struct {
 // New creates a FileWatcher from config values.
 func New(cfg Config, log logging.Logger) (*FileWatcher, error) {
 	logg := log.With("pkg", "watchfs")
-	logg.Debug("creating watch fs")
+	logg.Debug("creating file watcher", "function", "New")
 
 	debounce, err := time.ParseDuration(cfg.FSNotify.DebounceWindow)
 	if err != nil {
@@ -69,6 +69,7 @@ func (wfs *FileWatcher) UpdateConfig(cfg Config) error {
 	wfs.mu.Lock()
 	defer wfs.mu.Unlock()
 	if wfs.cfg == cfg {
+		wfs.logg.Debug("same config, returning", "function", "UpdateConfig")
 		return nil
 	}
 	wfs.cfg = cfg

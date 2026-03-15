@@ -21,7 +21,7 @@ func (sw *Watcher) NeedsRestart(newCfg Config) bool {
 	sw.mu.RLock()
 	defer sw.mu.RUnlock()
 	oldCfg := sw.cfg
-	return isSameConfig(oldCfg, newCfg)
+	return !isSameConfig(oldCfg, newCfg)
 }
 
 func isSameConfig(oldCfg, newCfg Config) bool {

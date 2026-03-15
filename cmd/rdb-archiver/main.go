@@ -38,39 +38,40 @@ func main() {
 	if err != nil {
 		stdLog.Fatalf("failed to load config: %v", err)
 	}
-	cfg.ApplyDefaults()
+	cfg.ApplyDefaults(stdLog)
 
 	logg := logging.NewSlogLogger(cfg.Logging)
+	mainLogg := logg.With("pkg", "main")
 
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
-		logg.Info("shutting down...")
+		mainLogg.Info("shutting down...")
 		cancel()
 	}()
 
 	// metrics server - prometheus
 	metricsReg := prometheus.NewRegistry()
-	workerMetrics := prometheus.NewWorkerMetrics(metricsReg)
-	snapshotWatcherMetrics := prometheus.NewSnapshotWatcherMetrics(metricsReg)
+	workerMetrics := prometheus.NewWorkerMetrics(metricsReg, cfg.Prometheus)
+	snapshotWatcherMetrics := prometheus.NewSnapshotWatcherMetrics(metricsReg, cfg.Prometheus)
 	mailboxMetrics := prometheus.NewMailboxMetrics(metricsReg)
-	retentionMetrics := prometheus.NewRetentionMetrics(metricsReg)
+	retentionMetrics := prometheus.NewRetentionMetrics(metricsReg, cfg.Prometheus)
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", metricsReg.Handler())
 	metricsSrv := prometheus.New(cfg.Prometheus, mux)
 
 	go func() {
-		logg.Info("starting metrics server", "addr", ":9090")
+		mainLogg.Info("starting metrics server", "addr", ":9090")
 		if err := metricsSrv.Start(ctx); err != nil {
-			logg.Error("metrics server stopped", "error", err)
+			mainLogg.Error("metrics server stopped", "error", err)
 		}
 	}()
 	// metrics server - end of
 
 	osfs := fs.New(cfg.FS, logg)
-	mb := mailbox.New[snapshot.Job](mailboxMetrics)
+	mb := mailbox.New[snapshot.Job](mailboxMetrics, logg)
 	ret := retention.New(logg, retentionMetrics)
 
 	fw, err := watchfs.New(cfg.WatchFS, logg)
@@ -92,7 +93,7 @@ func main() {
 			fileHash,
 			cfg.ConfigReload.Method,
 			fw,
-			logg,
+			mainLogg,
 			func(newCfg *config.Config) {
 				logg.UpdateConfig(newCfg.Logging)
 				_ = fw.UpdateConfig(newCfg.WatchFS)

@@ -15,7 +15,7 @@ type RetentionMetrics struct {
 	snapshotsDeleted   *prometheus.CounterVec
 }
 
-func NewRetentionMetrics(reg prometheus.Registerer) retention.Metrics {
+func NewRetentionMetrics(reg prometheus.Registerer, cfg Config) retention.Metrics {
 	m := &RetentionMetrics{
 		retentionRuns: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "pipeline_retention_runs_total",
@@ -25,7 +25,7 @@ func NewRetentionMetrics(reg prometheus.Registerer) retention.Metrics {
 		retentionRunDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "pipeline_retention_run_duration_seconds",
 			Help:    "Duration of retention cycles",
-			Buckets: prometheus.DefBuckets,
+			Buckets: cfg.HistogramBuckets,
 		}),
 
 		snapshotsProcessed: prometheus.NewCounterVec(

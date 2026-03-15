@@ -42,11 +42,12 @@ func NewSlogLogger(cfg Config) *SlogLogger {
 // UpdateConfig rebuilds the logger with new level/format settings.
 func (l *SlogLogger) UpdateConfig(cfg Config) {
 	l.mu.Lock()
-	defer l.mu.Unlock()
 	if l.cfg == cfg {
+		l.mu.Unlock()
 		return
 	}
 	l.applyConfig(cfg)
+	l.mu.Unlock()
 	l.Info("config updated", "pkg", "logger")
 }
 

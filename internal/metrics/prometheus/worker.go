@@ -16,7 +16,7 @@ type WorkerMetrics struct {
 	bytesWritten prometheus.Counter
 }
 
-func NewWorkerMetrics(reg prometheus.Registerer) worker.Metrics {
+func NewWorkerMetrics(reg prometheus.Registerer, cfg Config) worker.Metrics {
 	m := &WorkerMetrics{
 		jobsProcessed: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "worker_jobs_processed_total",
@@ -33,7 +33,7 @@ func NewWorkerMetrics(reg prometheus.Registerer) worker.Metrics {
 		jobDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "worker_job_processing_duration_seconds",
 			Help:    "Time spent processing a job",
-			Buckets: prometheus.DefBuckets,
+			Buckets: cfg.HistogramBuckets,
 		}),
 		bytesWritten: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "worker_bytes_written_total",

@@ -15,7 +15,7 @@ type SnapshotWatcherMetrics struct {
 	jobsEnqueued      prometheus.Counter
 }
 
-func NewSnapshotWatcherMetrics(reg prometheus.Registerer) snapshotwatcher.Metrics {
+func NewSnapshotWatcherMetrics(reg prometheus.Registerer, cfg Config) snapshotwatcher.Metrics {
 	m := &SnapshotWatcherMetrics{
 		eventsReceived: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "snapshotwatcher_events_received_total",
@@ -32,7 +32,7 @@ func NewSnapshotWatcherMetrics(reg prometheus.Registerer) snapshotwatcher.Metric
 		detectionDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "snapshotwatcher_detection_duration_seconds",
 			Help:    "Time spent detecting and parsing snapshots",
-			Buckets: prometheus.DefBuckets,
+			Buckets: cfg.HistogramBuckets,
 		}),
 		jobsEnqueued: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "snapshotwatcher_jobs_enqueued_total",

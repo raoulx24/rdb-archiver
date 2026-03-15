@@ -2,6 +2,8 @@
 
 import (
 	"context"
+	"log"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -109,7 +111,8 @@ func (r *ConfigReloader) scheduleReload(ctx context.Context) {
 
 		r.logg.Info("config file change detected")
 
-		newCfg.ApplyDefaults()
+		stdLog := log.New(os.Stdout, "", log.LstdFlags)
+		newCfg.ApplyDefaults(stdLog)
 
 		r.apply(newCfg)
 

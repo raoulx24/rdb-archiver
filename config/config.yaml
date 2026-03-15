@@ -43,6 +43,7 @@ health:
 prometheus:
   enabled: true
   port: 9090
+  histogramBuckets: [0.1, 0.5, 1, 5, 10]
 
 configReload:
   enabled: true

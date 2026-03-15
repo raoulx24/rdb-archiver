@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 
@@ -42,14 +43,14 @@ func Load(path string) (*Config, string, error) {
 	return &cfg, hash, nil
 }
 
-func (c *Config) ApplyDefaults() {
+func (c *Config) ApplyDefaults(logger *log.Logger) {
 	c.Source.ApplyDefaults()
 	c.Destination.ApplyDefaults()
 	c.WatchFS.ApplyDefaults()
 	c.FS.ApplyDefaults()
 	c.Logging.ApplyDefaults()
 	c.Health.ApplyDefaults()
-	c.Prometheus.ApplyDefaults()
+	c.Prometheus.ApplyDefaults(logger)
 	c.ConfigReload.ApplyDefaults()
 }
 

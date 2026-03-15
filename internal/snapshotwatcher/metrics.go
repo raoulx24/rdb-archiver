@@ -9,3 +9,11 @@ type Metrics interface {
 	ObserveDetectionDuration(d time.Duration)
 	JobEnqueued() // job sent to mailbox
 }
+
+func (sw *Watcher) RebuildMetrics(newMetrics Metrics) {
+	sw.logg.Debug("rebuilding metrics", "function", "RebuildMetrics")
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+
+	sw.metrics = newMetrics
+}

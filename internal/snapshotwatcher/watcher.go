@@ -61,9 +61,10 @@ func (sw *Watcher) Start(ctx context.Context) error {
 	dir := sw.cfg.Path
 	file := sw.cfg.PrimaryName
 	mode := sw.cfg.WatchMode
+	metrics := sw.metrics
 	sw.mu.RUnlock()
 
-	sw.checkForNewSnapshot()
+	sw.checkForNewSnapshot(metrics)
 
 	sw.mu.Lock()
 	sw.lastHeartbeat = time.Now()
@@ -93,12 +94,13 @@ func (sw *Watcher) consumeEvents(ctx context.Context, events <-chan struct{}) {
 				sw.logg.Info("events channel closed, stopping event loop")
 				return
 			}
-			sw.metrics.EventReceived()
 			sw.mu.Lock()
 			sw.lastHeartbeat = time.Now()
+			metrics := sw.metrics
 			sw.mu.Unlock()
+			metrics.EventReceived()
 			sw.logg.Debug("event received", "function", "consumeEvents")
-			sw.checkForNewSnapshot()
+			sw.checkForNewSnapshot(metrics)
 		}
 	}
 }

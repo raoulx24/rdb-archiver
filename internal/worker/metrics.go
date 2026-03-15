@@ -9,3 +9,11 @@ type Metrics interface {
 	ObserveJobProcessingDuration(d time.Duration)
 	AddBytesWritten(n int64)
 }
+
+func (w *Worker) RebuildMetrics(newMetrics Metrics) {
+	w.logg.Debug("rebuilding metrics", "function", "RebuildMetrics")
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.metrics = newMetrics
+}

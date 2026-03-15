@@ -26,6 +26,7 @@ func (sw *Watcher) NeedsRestart(newCfg Config) bool {
 	return !sw.isSameConfig(oldCfg, newCfg)
 }
 
+// isSameConfig compares the configs
 func (sw *Watcher) isSameConfig(oldCfg, newCfg Config) bool {
 	// Compare simple fields
 	if oldCfg.WatchMode != newCfg.WatchMode ||

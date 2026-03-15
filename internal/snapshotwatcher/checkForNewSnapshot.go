@@ -9,9 +9,9 @@ import (
 )
 
 // checkForNewSnapshot checks for a new snapshot and emits a job if needed.
-func (sw *Watcher) checkForNewSnapshot() {
+func (sw *Watcher) checkForNewSnapshot(metrics Metrics) {
 	start := time.Now()
-	defer sw.metrics.ObserveDetectionDuration(time.Since(start))
+	defer metrics.ObserveDetectionDuration(time.Since(start))
 
 	sw.mu.RLock()
 	dir := sw.cfg.Path
@@ -24,7 +24,7 @@ func (sw *Watcher) checkForNewSnapshot() {
 
 	info, err := os.Stat(path)
 	if err != nil {
-		sw.metrics.InvalidSnapshot()
+		metrics.InvalidSnapshot()
 		sw.logg.Debug("failed to stat snapshot file", "error", err)
 		return // file missing or unreadable
 	}
@@ -36,7 +36,7 @@ func (sw *Watcher) checkForNewSnapshot() {
 		Primary: snapshot.FromFileInfo(path, info),
 		Aux:     sw.loadAux(dir, aux),
 	}
-	sw.metrics.SnapshotParsed()
+	metrics.SnapshotParsed()
 
 	sw.mu.Lock()
 	sw.lastModTime = mod
@@ -45,5 +45,5 @@ func (sw *Watcher) checkForNewSnapshot() {
 	sw.logg.Info("snapshot detected", "path", path)
 	sw.logg.Debug("sending snapshot job", "function", "checkForNewSnapshot")
 	sw.mb.Put(snapshot.Job{Snap: snap})
-	sw.metrics.JobEnqueued()
+	metrics.JobEnqueued()
 }

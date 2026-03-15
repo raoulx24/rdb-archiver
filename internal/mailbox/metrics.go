@@ -6,3 +6,11 @@ type Metrics interface {
 	JobDequeued()                     // worker took the job
 	SetCurrentJobAge(seconds float64) // age of the job currently in mailbox
 }
+
+func (m *Mailbox[T]) RebuildMetrics(newMetrics Metrics) {
+	m.logg.Debug("rebuilding metrics", "function", "RebuildMetrics")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.metrics = newMetrics
+}

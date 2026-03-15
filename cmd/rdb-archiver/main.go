@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,7 +12,6 @@ import (
 	"github.com/raoulx24/rdb-archiver/internal/health"
 	"github.com/raoulx24/rdb-archiver/internal/logging"
 	"github.com/raoulx24/rdb-archiver/internal/mailbox"
-	"github.com/raoulx24/rdb-archiver/internal/metrics/prometheus"
 	"github.com/raoulx24/rdb-archiver/internal/retention"
 	"github.com/raoulx24/rdb-archiver/internal/snapshot"
 	"github.com/raoulx24/rdb-archiver/internal/snapshotwatcher"
@@ -52,26 +50,13 @@ func main() {
 	}()
 
 	// metrics server - prometheus
-	metricsReg := prometheus.NewRegistry()
-	workerMetrics := prometheus.NewWorkerMetrics(metricsReg, cfg.Prometheus)
-	snapshotWatcherMetrics := prometheus.NewSnapshotWatcherMetrics(metricsReg, cfg.Prometheus)
-	mailboxMetrics := prometheus.NewMailboxMetrics(metricsReg)
-	retentionMetrics := prometheus.NewRetentionMetrics(metricsReg, cfg.Prometheus)
-
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", metricsReg.Handler())
-	metricsSrv := prometheus.New(cfg.Prometheus, logg, mux)
-
-	go func() {
-		if err := metricsSrv.Start(ctx); err != nil {
-			mainLogg.Error("metrics server stopped", "error", err)
-		}
-	}()
+	mux, metricsBundle := buildMetrics(cfg.Prometheus)
+	metricsSrv, metricsCancel := startPrometheus(ctx, cfg.Prometheus, logg, mux)
 	// metrics server - end of
 
 	osfs := fs.New(cfg.FS, logg)
-	mb := mailbox.New[snapshot.Job](mailboxMetrics, logg)
-	ret := retention.New(logg, retentionMetrics)
+	mb := mailbox.New[snapshot.Job](metricsBundle.Mailbox, logg)
+	ret := retention.New(logg, metricsBundle.Retention)
 
 	fw, err := watchfs.New(cfg.WatchFS, logg)
 	if err != nil {
@@ -79,10 +64,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	mainWorker := worker.New(cfg.Destination, logg, workerMetrics, ret, mb, osfs)
+	mainWorker := worker.New(cfg.Destination, logg, metricsBundle.Worker, ret, mb, osfs)
 	go mainWorker.Start(ctx)
 
-	snapWatcher := snapshotwatcher.New(cfg.Source, snapshotWatcherMetrics, fw, mb, logg)
+	snapWatcher := snapshotwatcher.New(cfg.Source, metricsBundle.SnapshotWatcher, fw, mb, logg)
 	swm := NewSnapshotWatcherManager(snapWatcher, logg)
 	swm.Start(ctx)
 
@@ -103,6 +88,27 @@ func main() {
 					snapWatcher.UpdateConfig(newCfg.Source)
 					swm.Start(ctx)
 				}
+
+				// restart prometheus if needed
+				if metricsSrv.NeedsRestart(newCfg.Prometheus) {
+					mainLogg.Info("restarting prometheus server")
+
+					_ = metricsSrv.Stop(context.Background())
+					metricsCancel()
+
+					if metricsSrv.NeedMetricsRebuild(newCfg.Prometheus) {
+						newMux, metricsBundle := buildMetrics(cfg.Prometheus)
+						mux = newMux
+
+						mb.RebuildMetrics(metricsBundle.Mailbox)
+						ret.RebuildMetrics(metricsBundle.Retention)
+						mainWorker.RebuildMetrics(metricsBundle.Worker)
+						snapWatcher.RebuildMetrics(metricsBundle.SnapshotWatcher)
+					}
+
+					metricsSrv, metricsCancel = startPrometheus(ctx, newCfg.Prometheus, logg, mux)
+				}
+
 			},
 		)
 		go reloader.Start(ctx)

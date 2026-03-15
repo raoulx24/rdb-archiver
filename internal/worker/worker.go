@@ -47,6 +47,9 @@ func (w *Worker) Start(ctx context.Context) {
 	w.logg.Info("starting worker")
 	w.updateRetentionRules(w.cfg)
 	for {
+		w.mu.RLock()
+		metrics := w.metrics
+		w.mu.RUnlock()
 		job, ok := w.mb.Take(ctx)
 		if !ok {
 			w.logg.Info("worker stopped")
@@ -54,21 +57,21 @@ func (w *Worker) Start(ctx context.Context) {
 		}
 		start := time.Now()
 
-		if err := w.Handle(ctx, job.Snap); err != nil {
-			w.metrics.JobFailed()
+		if err := w.Handle(ctx, metrics, job.Snap); err != nil {
+			metrics.JobFailed()
 			w.logg.Error("snapshot handle failed", "error", err)
 		} else {
-			w.metrics.JobProcessed()
+			metrics.JobProcessed()
 		}
 
-		w.metrics.ObserveJobProcessingDuration(time.Since(start))
+		metrics.ObserveJobProcessingDuration(time.Since(start))
 	}
 }
 
 // Handle writes a snapshotwatcher directory and applies retention.
-func (w *Worker) Handle(ctx context.Context, snap snapshot.Snapshot) error {
+func (w *Worker) Handle(ctx context.Context, metrics Metrics, snap snapshot.Snapshot) error {
 	w.logg.Debug("worker starting snapshot handling", "function", "Handle")
-	finalDir, err := w.writeSnapshot(ctx, snap)
+	finalDir, err := w.writeSnapshot(ctx, metrics, snap)
 	if err != nil {
 		w.logg.Error("failed to write snapshot", "error", err)
 		return err
@@ -101,7 +104,7 @@ func (w *Worker) UpdateConfig(cfg Config) {
 }
 
 // writeSnapshot creates a tar+compressed archive for all snapshot files atomically.
-func (w *Worker) writeSnapshot(ctx context.Context, snap snapshot.Snapshot) (string, error) {
+func (w *Worker) writeSnapshot(ctx context.Context, metrics Metrics, snap snapshot.Snapshot) (string, error) {
 	w.mu.RLock()
 	dest := w.cfg
 	w.mu.RUnlock()
@@ -137,12 +140,12 @@ func (w *Worker) writeSnapshot(ctx context.Context, snap snapshot.Snapshot) (str
 	// Get file size
 	if info, err := w.fs.Stat(tmpArchive); err == nil {
 		w.logg.Debug("wrote snapshot archive", "function", "writeSnapshot", "tmpArchive", tmpArchive, "archiveSize", info.Size)
-		w.metrics.AddBytesWritten(info.Size)
+		metrics.AddBytesWritten(info.Size)
 	}
 
 	// Finalize atomically: remove existing final archive if present, then rename.
 	if _, err := w.fs.Stat(finalArchive); err == nil {
-		w.logg.Warn("found existing final archive, removing", "finalArchive", finalArchive)
+		w.logg.Debug("found existing final archive, removing", "function", "writeSnapshot", "finalArchive", finalArchive)
 		if err := w.fs.RemoveAll(finalArchive); err != nil {
 			return "", fmt.Errorf("failed to remove existing final archive: %w", err)
 		}

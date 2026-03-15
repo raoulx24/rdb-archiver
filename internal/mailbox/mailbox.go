@@ -41,6 +41,10 @@ func New[T any](metrics Metrics, log logging.Logger) *Mailbox[T] {
 func (m *Mailbox[T]) Stop() {
 	m.logg.Debug("stopping mailbox", "function", "Stop")
 	close(m.stopCh)
+	// broadcast to wake any sleeping go routines
+	m.mu.Lock()
+	m.cond.Broadcast()
+	m.mu.Unlock()
 }
 
 // Put stores a job in the mailbox, replacing any existing job.
@@ -48,21 +52,24 @@ func (m *Mailbox[T]) Stop() {
 func (m *Mailbox[T]) Put(j T) {
 	m.logg.Debug("new job", "function", "Put")
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	metrics := m.metrics
 
-	if m.job != nil {
-		m.logg.Debug("overriding job", "function", "Put")
-		m.metrics.JobOverwritten()
-	}
+	prev := m.job
 
 	m.job = &j
-
 	m.jobTimestamp = time.Now()
-	m.metrics.JobEnqueued()
-	m.metrics.SetCurrentJobAge(0)
-	m.logg.Debug("job enqueued", "function", "Put")
 
-	m.cond.Signal() // wake up worker if waiting
+	m.cond.Signal() // wake up worker if waiting - and keep it in lock()
+	m.mu.Unlock()
+
+	if prev != nil {
+		m.logg.Debug("overriding job", "function", "Put")
+		metrics.JobOverwritten()
+	}
+
+	metrics.JobEnqueued()
+	metrics.SetCurrentJobAge(0)
+	m.logg.Debug("job enqueued", "function", "Put")
 }
 
 // Take blocks until a job is available, then returns it and clears the slot.
@@ -70,10 +77,12 @@ func (m *Mailbox[T]) Take(ctx context.Context) (T, bool) {
 	m.logg.Debug("dequeueing job", "function", "Take")
 	var zero T
 	m.mu.Lock()
-	defer m.mu.Unlock()
+
+	metrics := m.metrics
 
 	for m.job == nil {
 		if ctx.Err() != nil {
+			m.mu.Unlock()
 			return zero, false
 		}
 		m.cond.Wait()
@@ -83,8 +92,10 @@ func (m *Mailbox[T]) Take(ctx context.Context) (T, bool) {
 	m.job = nil
 	m.jobTimestamp = time.Time{}
 
-	m.metrics.JobDequeued()
-	m.metrics.SetCurrentJobAge(0)
+	m.mu.Unlock()
+
+	metrics.JobDequeued()
+	metrics.SetCurrentJobAge(0)
 	m.logg.Debug("job dequeued", "function", "Take")
 
 	return j, true
@@ -95,7 +106,8 @@ func (m *Mailbox[T]) Take(ctx context.Context) (T, bool) {
 func (m *Mailbox[T]) TryTake() *T {
 	m.logg.Debug("dequeueing job", "function", "TryTake")
 	m.mu.Lock()
-	defer m.mu.Unlock()
+
+	metrics := m.metrics
 
 	if m.job == nil {
 		return nil
@@ -105,8 +117,10 @@ func (m *Mailbox[T]) TryTake() *T {
 	m.job = nil
 	m.jobTimestamp = time.Time{}
 
-	m.metrics.JobDequeued()
-	m.metrics.SetCurrentJobAge(0)
+	m.mu.Unlock()
+
+	metrics.JobDequeued()
+	metrics.SetCurrentJobAge(0)
 	m.logg.Debug("job dequeued", "function", "TryTake")
 
 	return j
@@ -122,7 +136,7 @@ func (m *Mailbox[T]) HasJob() bool {
 
 // ageUpdater runs in the background and updates job age every second.
 func (m *Mailbox[T]) ageUpdater() {
-	m.logg.Debug("staring age uppdater", "function", "ageUpdater")
+	m.logg.Debug("starting age updater", "function", "ageUpdater")
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
@@ -130,9 +144,10 @@ func (m *Mailbox[T]) ageUpdater() {
 		select {
 		case <-ticker.C:
 			m.mu.Lock()
+			metrics := m.metrics
 			if m.job != nil && !m.jobTimestamp.IsZero() {
 				age := time.Since(m.jobTimestamp).Seconds()
-				m.metrics.SetCurrentJobAge(age)
+				metrics.SetCurrentJobAge(age)
 				m.logg.Debug("age updated", "function", "ageUpdater")
 			}
 			m.mu.Unlock()

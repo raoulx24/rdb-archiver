@@ -54,11 +54,15 @@ func (r *Retention) UpdateConfig(config Config) {
 
 // Apply promotes the new snapshotwatcher and prunes old ones.
 func (r *Retention) Apply(ctx context.Context, filesystem fs.FS, archiveRoot, newSnapshotFile string) error {
+	r.mu.RLock()
+	metrics := r.metrics
+	r.mu.RUnlock()
+
 	r.logg.Debug("retention engine is starting to apply rules", "function", "Apply")
 
 	start := time.Now()
-	r.metrics.RetentionRun()
-	defer r.metrics.ObserveRetentionRunDuration(time.Since(start))
+	metrics.RetentionRun()
+	defer metrics.ObserveRetentionRunDuration(time.Since(start))
 
 	r.mu.RLock()
 	rules := append([]Rule(nil), r.cfg.Rules...)
@@ -78,15 +82,15 @@ func (r *Retention) Apply(ctx context.Context, filesystem fs.FS, archiveRoot, ne
 
 		if strings.TrimSpace(rule.Cron) != "" {
 			if err := r.promote(ctx, filesystem, rule, ruleDir, newSnapshotFile, ts, snapshotExtension); err != nil {
-				r.metrics.SnapshotProcessed(rule.Name, "error")
+				metrics.SnapshotProcessed(rule.Name, "error")
 
 				r.logg.Error("promote failed", "ruleName", rule.Name, "error", err)
 			} else {
-				r.metrics.SnapshotProcessed(rule.Name, "success")
+				metrics.SnapshotProcessed(rule.Name, "success")
 			}
 		}
 
-		if err := r.cleanup(filesystem, rule, ruleDir, snapshotExtension); err != nil {
+		if err := r.cleanup(filesystem, rule, ruleDir, snapshotExtension, metrics); err != nil {
 			r.logg.Error("retention - cleanup failed", "ruleName", rule.Name, "error", err)
 		}
 	}
@@ -143,7 +147,7 @@ func (r *Retention) promote(ctx context.Context, filesystem fs.FS, rule Rule, ru
 }
 
 // cleanup keeps only the newest N snapshotwatcher directories.
-func (r *Retention) cleanup(filesystem fs.FS, rule Rule, ruleDir string, snapshotExtension string) error {
+func (r *Retention) cleanup(filesystem fs.FS, rule Rule, ruleDir string, snapshotExtension string, metrics Metrics) error {
 	r.logg.Debug("processing rule", "function", "cleanup", "ruleName", rule.Name)
 	entries, err := filesystem.ReadDir(ruleDir)
 	if err != nil {
@@ -172,7 +176,7 @@ func (r *Retention) cleanup(filesystem fs.FS, rule Rule, ruleDir string, snapsho
 		if err := filesystem.RemoveAll(full); err != nil {
 			r.logg.Warn("removal of file failed", "rule", rule.Name, "snapshot", name, "error", err)
 		} else {
-			r.metrics.SnapshotDeleted(rule.Name)
+			metrics.SnapshotDeleted(rule.Name)
 		}
 	}
 

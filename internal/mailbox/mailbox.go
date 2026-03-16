@@ -19,6 +19,7 @@ type Mailbox[T any] struct {
 	job          *T
 	jobTimestamp time.Time
 	stopCh       chan struct{}
+	stopped      bool
 }
 
 // New creates an empty mailbox.
@@ -40,11 +41,12 @@ func New[T any](metrics Metrics, log logging.Logger) *Mailbox[T] {
 // Stop stops the mailbox's background goroutine.
 func (m *Mailbox[T]) Stop() {
 	m.logg.Debug("stopping mailbox", "function", "Stop")
-	close(m.stopCh)
-	// broadcast to wake any sleeping go routines
 	m.mu.Lock()
+	m.stopped = true
 	m.cond.Broadcast()
 	m.mu.Unlock()
+
+	close(m.stopCh)
 }
 
 // Put stores a job in the mailbox, replacing any existing job.
@@ -75,37 +77,71 @@ func (m *Mailbox[T]) Put(j T) {
 // Take blocks until a job is available, then returns it and clears the slot.
 func (m *Mailbox[T]) Take(ctx context.Context) (T, bool) {
 	m.logg.Debug("dequeueing job", "function", "Take")
-	var zero T
-	m.mu.Lock()
 
+	var zero T
+
+	// sync.Cond does not support context cancellation.
+	// To allow Take() to unblock when the context is cancelled,
+	// we register a callback that broadcasts the condition.
+	// This wakes any goroutine currently waiting in cond.Wait().
+	stop := context.AfterFunc(ctx, func() {
+		m.mu.Lock()
+		m.cond.Broadcast()
+		m.mu.Unlock()
+	})
+	defer stop() // Ensure the callback is removed if we return normally.
+
+	m.mu.Lock()
 	metrics := m.metrics
 
-	for m.job == nil {
+	// Wait until:
+	//   - a job is available
+	//   - the mailbox is stopped
+	//   - the context is cancelled
+	//
+	// cond.Wait() releases the mutex while waiting and re-acquires it
+	// before returning.
+	for m.job == nil && !m.stopped {
+		// If the context was cancelled, stop waiting and return.
 		if ctx.Err() != nil {
 			m.mu.Unlock()
 			return zero, false
 		}
+
+		// Wait for:
+		//   - Put() to signal a new job
+		//   - Stop() to broadcast shutdown
+		//   - the context.AfterFunc() callback to broadcast cancellation
 		m.cond.Wait()
 	}
 
+	// If the mailbox was stopped and there is no job left, exit.
+	if m.job == nil {
+		m.mu.Unlock()
+		return zero, false
+	}
+
+	// Retrieve the job and clear the mailbox slot.
 	j := *m.job
 	m.job = nil
 	m.jobTimestamp = time.Time{}
 
 	m.mu.Unlock()
 
+	// Update metrics outside the lock to avoid blocking mailbox operations.
 	metrics.JobDequeued()
 	metrics.SetCurrentJobAge(0)
-	m.logg.Debug("job dequeued", "function", "Take")
 
+	m.logg.Debug("job dequeued", "function", "Take")
 	return j, true
 }
 
 // TryTake returns the job if present, or nil if empty.
 // It never blocks.
 func (m *Mailbox[T]) TryTake() *T {
-	m.logg.Debug("dequeueing job", "function", "TryTake")
+	m.logg.Debug("try dequeueing job", "function", "TryTake")
 	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	metrics := m.metrics
 
@@ -116,8 +152,6 @@ func (m *Mailbox[T]) TryTake() *T {
 	j := m.job
 	m.job = nil
 	m.jobTimestamp = time.Time{}
-
-	m.mu.Unlock()
 
 	metrics.JobDequeued()
 	metrics.SetCurrentJobAge(0)
@@ -144,14 +178,16 @@ func (m *Mailbox[T]) ageUpdater() {
 		select {
 		case <-ticker.C:
 			m.mu.Lock()
+			ts := m.jobTimestamp
+			hasJob := m.job != nil
 			metrics := m.metrics
-			if m.job != nil && !m.jobTimestamp.IsZero() {
+			m.mu.Unlock()
+
+			if hasJob && !ts.IsZero() {
 				age := time.Since(m.jobTimestamp).Seconds()
 				metrics.SetCurrentJobAge(age)
 				m.logg.Debug("age updated", "function", "ageUpdater")
 			}
-			m.mu.Unlock()
-
 		case <-m.stopCh:
 			return
 		}

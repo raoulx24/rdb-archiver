@@ -19,24 +19,24 @@ type WorkerMetrics struct {
 func NewWorkerMetrics(reg prometheus.Registerer, cfg Config) worker.Metrics {
 	m := &WorkerMetrics{
 		jobsProcessed: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "rdb_archiver_jobs_processed_total",
+			Name: "rdb_archiver_worker_jobs_processed_total",
 			Help: "Number of jobs successfully processed",
 		}),
 		jobsFailed: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "rdb_archiver_jobs_failed_total",
+			Name: "rdb_archiver_worker_jobs_failed_total",
 			Help: "Number of jobs that failed",
 		}),
 		jobsRetried: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "rdb_archiver_jobs_retried_total",
+			Name: "rdb_archiver_worker_jobs_retried_total",
 			Help: "Number of jobs retried",
 		}),
 		jobDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name:    "rdb_archiver_job_processing_duration_seconds",
+			Name:    "rdb_archiver_worker_job_processing_duration_seconds",
 			Help:    "Time spent processing a job",
 			Buckets: cfg.HistogramBuckets,
 		}),
 		bytesWritten: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "rdb_archiver_bytes_written_total",
+			Name: "rdb_archiver_worker_bytes_written_total",
 			Help: "Total bytes written by worker",
 		}),
 	}

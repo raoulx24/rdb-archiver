@@ -15,19 +15,19 @@ type SnapshotWatcherMetrics struct {
 func NewSnapshotWatcherMetrics(reg prometheus.Registerer) snapshotwatcher.Metrics {
 	m := &SnapshotWatcherMetrics{
 		eventsReceived: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "rdb_archiver_events_received_total",
+			Name: "rdb_archiver_watcher_events_received_total",
 			Help: "Number of filesystem events received",
 		}),
 		snapshotsParsed: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "rdb_archiver_snapshots_parsed_total",
+			Name: "rdb_archiver_watcher_snapshots_parsed_total",
 			Help: "Number of valid snapshots detected",
 		}),
 		invalidSnapshots: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "rdb_archiver_invalid_snapshots_total",
+			Name: "rdb_archiver_watcher_invalid_snapshots_total",
 			Help: "Number of invalid or unreadable snapshots",
 		}),
 		jobsEnqueued: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "rdb_archiver_jobs_enqueued_total",
+			Name: "rdb_archiver_watcher_jobs_enqueued_total",
 			Help: "Number of jobs enqueued into mailbox",
 		}),
 	}

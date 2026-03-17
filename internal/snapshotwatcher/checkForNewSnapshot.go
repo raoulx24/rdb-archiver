@@ -3,16 +3,12 @@
 import (
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/raoulx24/rdb-archiver/internal/snapshot"
 )
 
 // checkForNewSnapshot checks for a new snapshot and emits a job if needed.
 func (sw *Watcher) checkForNewSnapshot(metrics Metrics) {
-	start := time.Now()
-	defer metrics.ObserveDetectionDuration(time.Since(start))
-
 	sw.mu.RLock()
 	dir := sw.cfg.Path
 	primary := sw.cfg.PrimaryName

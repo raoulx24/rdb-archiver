@@ -60,9 +60,7 @@ func (r *Retention) Apply(ctx context.Context, filesystem fs.FS, archiveRoot, ne
 
 	r.logg.Debug("retention engine is starting to apply rules", "function", "Apply")
 
-	start := time.Now()
 	metrics.RetentionRun()
-	defer metrics.ObserveRetentionRunDuration(time.Since(start))
 
 	r.mu.RLock()
 	rules := append([]Rule(nil), r.cfg.Rules...)

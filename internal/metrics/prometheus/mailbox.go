@@ -9,26 +9,21 @@ type MailboxMetrics struct {
 	enqueued    prometheus.Counter
 	overwritten prometheus.Counter
 	dequeued    prometheus.Counter
-	jobAge      prometheus.Gauge
 }
 
 func NewMailboxMetrics(reg prometheus.Registerer) mailbox.Metrics {
 	m := &MailboxMetrics{
 		enqueued: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "mailbox_jobs_enqueued_total",
+			Name: "rdb_archiver_mailbox_jobs_enqueued_total",
 			Help: "Number of jobs enqueued into mailbox",
 		}),
 		overwritten: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "mailbox_jobs_overwritten_total",
+			Name: "rdb_archiver_mailbox_jobs_overwritten_total",
 			Help: "Number of jobs overwritten in mailbox",
 		}),
 		dequeued: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "mailbox_jobs_dequeued_total",
+			Name: "rdb_archiver_mailbox_jobs_dequeued_total",
 			Help: "Number of jobs dequeued from mailbox",
-		}),
-		jobAge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "mailbox_current_job_age_seconds",
-			Help: "Age of the job currently in mailbox",
 		}),
 	}
 
@@ -36,7 +31,6 @@ func NewMailboxMetrics(reg prometheus.Registerer) mailbox.Metrics {
 		m.enqueued,
 		m.overwritten,
 		m.dequeued,
-		m.jobAge,
 	)
 
 	return m
@@ -52,8 +46,4 @@ func (m *MailboxMetrics) JobOverwritten() {
 
 func (m *MailboxMetrics) JobDequeued() {
 	m.dequeued.Inc()
-}
-
-func (m *MailboxMetrics) SetCurrentJobAge(seconds float64) {
-	m.jobAge.Set(seconds)
 }

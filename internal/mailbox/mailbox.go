@@ -3,7 +3,6 @@
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/raoulx24/rdb-archiver/internal/logging"
 )
@@ -12,14 +11,12 @@ import (
 // It is NOT a queue. It holds at most one pending job.
 // Put() overwrites any existing job. Take() blocks until a job is available.
 type Mailbox[T any] struct {
-	mu           sync.Mutex
-	logg         logging.Logger
-	metrics      Metrics
-	cond         *sync.Cond
-	job          *T
-	jobTimestamp time.Time
-	stopCh       chan struct{}
-	stopped      bool
+	mu      sync.Mutex
+	logg    logging.Logger
+	metrics Metrics
+	cond    *sync.Cond
+	job     *T
+	stopped bool
 }
 
 // New creates an empty mailbox.
@@ -29,11 +26,8 @@ func New[T any](metrics Metrics, log logging.Logger) *Mailbox[T] {
 	m := &Mailbox[T]{
 		logg:    logg,
 		metrics: metrics,
-		stopCh:  make(chan struct{}),
 	}
 	m.cond = sync.NewCond(&m.mu)
-
-	go m.ageUpdater()
 
 	return m
 }
@@ -45,8 +39,6 @@ func (m *Mailbox[T]) Stop() {
 	m.stopped = true
 	m.cond.Broadcast()
 	m.mu.Unlock()
-
-	close(m.stopCh)
 }
 
 // Put stores a job in the mailbox, replacing any existing job.
@@ -59,7 +51,6 @@ func (m *Mailbox[T]) Put(j T) {
 	prev := m.job
 
 	m.job = &j
-	m.jobTimestamp = time.Now()
 
 	m.cond.Signal() // wake up worker if waiting - and keep it in lock()
 	m.mu.Unlock()
@@ -70,7 +61,6 @@ func (m *Mailbox[T]) Put(j T) {
 	}
 
 	metrics.JobEnqueued()
-	metrics.SetCurrentJobAge(0)
 	m.logg.Debug("job enqueued", "function", "Put")
 }
 
@@ -124,13 +114,11 @@ func (m *Mailbox[T]) Take(ctx context.Context) (T, bool) {
 	// Retrieve the job and clear the mailbox slot.
 	j := *m.job
 	m.job = nil
-	m.jobTimestamp = time.Time{}
 
 	m.mu.Unlock()
 
 	// Update metrics outside the lock to avoid blocking mailbox operations.
 	metrics.JobDequeued()
-	metrics.SetCurrentJobAge(0)
 
 	m.logg.Debug("job dequeued", "function", "Take")
 	return j, true
@@ -151,10 +139,8 @@ func (m *Mailbox[T]) TryTake() *T {
 
 	j := m.job
 	m.job = nil
-	m.jobTimestamp = time.Time{}
 
 	metrics.JobDequeued()
-	metrics.SetCurrentJobAge(0)
 	m.logg.Debug("job dequeued", "function", "TryTake")
 
 	return j
@@ -166,30 +152,4 @@ func (m *Mailbox[T]) HasJob() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.job != nil
-}
-
-// ageUpdater runs in the background and updates job age every second.
-func (m *Mailbox[T]) ageUpdater() {
-	m.logg.Debug("starting age updater", "function", "ageUpdater")
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			m.mu.Lock()
-			ts := m.jobTimestamp
-			hasJob := m.job != nil
-			metrics := m.metrics
-			m.mu.Unlock()
-
-			if hasJob && !ts.IsZero() {
-				age := time.Since(m.jobTimestamp).Seconds()
-				metrics.SetCurrentJobAge(age)
-				m.logg.Debug("age updated", "function", "ageUpdater")
-			}
-		case <-m.stopCh:
-			return
-		}
-	}
 }

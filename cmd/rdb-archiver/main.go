@@ -50,7 +50,7 @@ func main() {
 	}()
 
 	// metrics server - prometheus
-	mux, metricsBundle := buildMetrics(cfg.Prometheus)
+	mux, metricsBundle := buildMetrics(cfg.Prometheus, Version, Commit, BuildDate)
 	metricsSrv, metricsCancel := startPrometheus(ctx, cfg.Prometheus, logg, mux)
 	// metrics server - end of
 
@@ -97,7 +97,7 @@ func main() {
 					metricsCancel()
 
 					if metricsSrv.NeedMetricsRebuild(newCfg.Prometheus) {
-						newMux, metricsBundle := buildMetrics(cfg.Prometheus)
+						newMux, metricsBundle := buildMetrics(cfg.Prometheus, Version, Commit, BuildDate)
 						mux = newMux
 
 						mb.RebuildMetrics(metricsBundle.Mailbox)

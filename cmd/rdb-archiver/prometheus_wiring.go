@@ -17,6 +17,7 @@ type MetricsBundle struct {
 	SnapshotWatcher snapshotwatcher.Metrics
 	Mailbox         mailbox.Metrics
 	Retention       retention.Metrics
+	BuildInfo       prometheus.BuildInfoMetrics
 }
 
 func startPrometheus(ctx context.Context, cfg prometheus.Config, logg logging.Logger, mux http.Handler) (prometheus.Server, context.CancelFunc) {
@@ -32,14 +33,15 @@ func startPrometheus(ctx context.Context, cfg prometheus.Config, logg logging.Lo
 	return srv, cancel
 }
 
-func buildMetrics(cfg prometheus.Config) (*http.ServeMux, MetricsBundle) {
+func buildMetrics(cfg prometheus.Config, version, commit, buildDate string) (*http.ServeMux, MetricsBundle) {
 	reg := prometheus.NewRegistry()
 
 	bundle := MetricsBundle{
 		Worker:          prometheus.NewWorkerMetrics(reg, cfg),
-		SnapshotWatcher: prometheus.NewSnapshotWatcherMetrics(reg, cfg),
+		SnapshotWatcher: prometheus.NewSnapshotWatcherMetrics(reg),
 		Mailbox:         prometheus.NewMailboxMetrics(reg),
-		Retention:       prometheus.NewRetentionMetrics(reg, cfg),
+		Retention:       prometheus.NewRetentionMetrics(reg),
+		BuildInfo:       prometheus.NewBuildInfoMetrics(reg, version, commit, buildDate),
 	}
 
 	mux := http.NewServeMux()

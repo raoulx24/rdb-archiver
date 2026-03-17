@@ -1,41 +1,33 @@
 ﻿package prometheus
 
 import (
-	"time"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/raoulx24/rdb-archiver/internal/snapshotwatcher"
 )
 
 type SnapshotWatcherMetrics struct {
-	eventsReceived    prometheus.Counter
-	snapshotsParsed   prometheus.Counter
-	invalidSnapshots  prometheus.Counter
-	detectionDuration prometheus.Histogram
-	jobsEnqueued      prometheus.Counter
+	eventsReceived   prometheus.Counter
+	snapshotsParsed  prometheus.Counter
+	invalidSnapshots prometheus.Counter
+	jobsEnqueued     prometheus.Counter
 }
 
-func NewSnapshotWatcherMetrics(reg prometheus.Registerer, cfg Config) snapshotwatcher.Metrics {
+func NewSnapshotWatcherMetrics(reg prometheus.Registerer) snapshotwatcher.Metrics {
 	m := &SnapshotWatcherMetrics{
 		eventsReceived: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "snapshotwatcher_events_received_total",
+			Name: "rdb_archiver_events_received_total",
 			Help: "Number of filesystem events received",
 		}),
 		snapshotsParsed: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "snapshotwatcher_snapshots_parsed_total",
+			Name: "rdb_archiver_snapshots_parsed_total",
 			Help: "Number of valid snapshots detected",
 		}),
 		invalidSnapshots: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "snapshotwatcher_invalid_snapshots_total",
+			Name: "rdb_archiver_invalid_snapshots_total",
 			Help: "Number of invalid or unreadable snapshots",
 		}),
-		detectionDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name:    "snapshotwatcher_detection_duration_seconds",
-			Help:    "Time spent detecting and parsing snapshots",
-			Buckets: cfg.HistogramBuckets,
-		}),
 		jobsEnqueued: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "snapshotwatcher_jobs_enqueued_total",
+			Name: "rdb_archiver_jobs_enqueued_total",
 			Help: "Number of jobs enqueued into mailbox",
 		}),
 	}
@@ -44,7 +36,6 @@ func NewSnapshotWatcherMetrics(reg prometheus.Registerer, cfg Config) snapshotwa
 		m.eventsReceived,
 		m.snapshotsParsed,
 		m.invalidSnapshots,
-		m.detectionDuration,
 		m.jobsEnqueued,
 	)
 
@@ -61,10 +52,6 @@ func (m *SnapshotWatcherMetrics) SnapshotParsed() {
 
 func (m *SnapshotWatcherMetrics) InvalidSnapshot() {
 	m.invalidSnapshots.Inc()
-}
-
-func (m *SnapshotWatcherMetrics) ObserveDetectionDuration(d time.Duration) {
-	m.detectionDuration.Observe(d.Seconds())
 }
 
 func (m *SnapshotWatcherMetrics) JobEnqueued() {

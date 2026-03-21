@@ -33,6 +33,8 @@ This produces a binary named rdb-archiver (or rdb-archiver.exe on Windows).
 ./rdb-archiver
 ```
 
+> * 
+
 ## Configuration Details
 
 The config file is YAML. Any value can use environment variables:
@@ -58,9 +60,9 @@ source:
 - `path` - directory where Redis/Valkey writes the RDB file
 - `primaryName` - usually `dump.rdb`
 - `auxNames` - extra files to copy
-- `watchMode` - auto, fsnotify, or poll
+- `watchMode` - `auto`, `fsnotify`, or `poll`
 
-`nodes.conf` should be included when archiving Redis/Valkey cluster nodes.
+> **Important** `nodes.conf` should be included when archiving Redis/Valkey cluster nodes.
 It stores the cluster topology (node IDs, slots, replication). A restore
 may fail or start in an inconsistent state if `nodes.conf` is missing or
 different.
@@ -83,7 +85,7 @@ destination:
 - `root` - base folder for snapshots
 - `subDir` - usually the pod name or hostname
 - `snapshotSubdir` - folder where snapshots go
-`retention` - rules for deleting old snapshots
+- `retention` - rules for keeping/deleting old snapshots
 
 Retention supports:
 - `lastCount` - keep last N snapshots
@@ -112,7 +114,7 @@ fs:
 ```
 File system behavior:
 - `maxRetries`, `retryBase`, `retryDurationCap` are for retrying policies
-- `compressionLevel` is for zst files
+- `compressionLevel` is for `zst` files
 
 ### `logging`
 
@@ -125,8 +127,8 @@ logging:
 - `format` - can be `json`, `text`
 
 Use log format
-- `json` when structured logs are needed and a tool like `fluentd` is used to ship them in `elasticsearch' (examples)
-- `text` when more human readable logs are needed
+- `json` when structured logs are needed and a log shipper (for example `fluentd`) sends them to a system like `Elasticsearch`
+- `text` when human‑readable logs are preferred (local debugging, simple setups)
 
 ### `health`
 
@@ -160,13 +162,18 @@ Polling is recommended when using a `ConfigMap` in Kubernetes.
 
 Snapshots are stored as:
 ```
-<root>/<subDir>/snapshots/<timestamp>/
+<root>/<subDir>/snapshots/<timestamp>.tar.zst
 ```
 Example:
 ```
-/backup/my-pod/snapshots/2024-01-01T00-00-00Z/
-  dump.rdb
-  nodes.conf
+/backup/my-pod/snapshots/
+  2026-03-02T08-45-13.tar.zst
+  2026-03-02T08-47-35.tar.zst
+  [...]
+/backup/my-pod/daily/
+  2026-03-01T00-01-02Z.tar.zst
+  2026-03-02T00-03-04Z.tar.zst
+  [...]
 ```
 
 ## Docker Usage

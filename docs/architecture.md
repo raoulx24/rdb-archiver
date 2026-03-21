@@ -4,7 +4,7 @@ RDB Archiver
 ## Overview
 RDB Archiver is a small service that watches a Redis or Valkey RDB file and creates snapshot 
 copies whenever the file changes. It also applies retention rules, exposes health endpoints, 
-and provides Prometheus metrics. The design is simple: detect → enqueue → process → store → clean up.
+and provides Prometheus metrics. The design is simple: `detect -> enqueue -> process -> store -> clean up`.
 
 This document explains the internal structure and how the main parts work together.
 
@@ -12,9 +12,7 @@ This document explains the internal structure and how the main parts work togeth
 
 ### Snapshot Watcher 
 
-The watcher monitors the source directory for changes to:
-- the primary file (`dump.rdb`)
-- optional auxiliary files (for example `nodes.conf`)
+The watcher monitors the source directory for changes to the primary file (`dump.rdb`)
 
 It supports two modes:
 - `fsnotify` - real‑time file system events
@@ -37,6 +35,10 @@ The mailbox:
 - receives jobs from the watcher
 - stores only the latest job (older ones may be overwritten)
 - delivers jobs to the worker
+
+The mailbox is a best‑effort queue. It holds maximum one job at a time.
+If the worker is busy and a new snapshot arrives, the existing job in the queue is replaced with the newer one.
+This ensures the worker always processes the most recent snapshot and avoids unnecessary backlog.
 
 Metrics track how many jobs were enqueued, dequeued, or overwritten.
 
@@ -110,17 +112,16 @@ These help operators understand how often snapshots are created, how long they t
 Snapshots are stored under:
 
 ```
-<root>/<subDir>/snapshots/<timestamp>/
+<root>/<subDir>/snapshots/<timestamp>.tar.zst
 ```
 
 Example:
 ```
-/backup/my-pod/snapshots/2024-01-01T00-00-00Z/
-dump.rdb
-nodes.conf
+/backup/my-pod/snapshots/
+  2026-03-02T08-45-13.tar.zst
 ```
 
-The timestamp is generated when the worker processes the job.
+The timestamp is the modify moment of the RDB file.
 
 ### Redis and Valkey Compatibility
 
@@ -128,13 +129,8 @@ Redis and Valkey both write RDB files in the same format and with the same file 
 The archiver does not parse the RDB file; it only copies it.
 Therefore, it works with both systems without any special handling.
 
-#### Data Flow
+### Data Flow
 ```
-     +---------------+
-     |    fsprobe    |
-     +-------+-------+
-             |
-             v
   +----------+-----------+
   |   Snapshot Watcher   |
   |  (fsnotify or poll)  |

@@ -2,24 +2,27 @@
 
 ## What this tool does
 
-RDB Archiver watches a Redis or Valkey RDB file (usually dump.rdb).
+RDB Archiver watches a Redis or Valkey RDB file (usually `dump.rdb`).
 When the file changes, it creates a snapshot (a backup copy).
-It can also copy extra files like nodes.conf.
+It can also copy extra files like `nodes.conf`.
 
 The tool keeps old snapshots using retention rules (for example: keep the last 6, keep 7 daily, keep 4 weekly).
-It works on Linux and Windows.
 
-You can run it on your machine, in Docker, or in Kubernetes.
+It works on Linux and Windows. You can run it on your machine, in Docker, or in Kubernetes.
+
+It supports config hot reload, so no Redis/Valkey node restart is needed if changes in config are needed.
+
+The service is small, fast, and has a very low memory footprint.
+It focuses on doing one thing well: detecting new RDB files and archiving them reliably.
 
 ## Works with Redis and Valkey
 
 Redis and Valkey both write RDB files in the same format and with the same file names.
 This tool works with both without any changes.
 
->> **Note:** If you run Redis or Valkey in cluster mode, include `nodes.conf` in `auxNames`,
+> **Important:** If you run Redis or Valkey in cluster mode, include `nodes.conf` in `auxNames`,
 as it contains the sharding topology. A restore will fail if the topology in the destination
 does not match the source.
-
 
 ## How it detects new snapshots
 
@@ -27,10 +30,10 @@ The tool can watch the RDB file in two ways:
 - **fsnotify** (real‑time file change events)
 - **polling** (check the file every few seconds)
 
-If `auto` is used and `fsnotify` is not supported by the file system, the tool will fall back to `polling`
+If `auto` is used and `fsnotify` is not supported by the file system, the app will fall back to `polling`
 
 ## Where snapshots are stored
-You choose a destination folder. Inside it, the tool creates:
+You choose a destination folder. Inside it, the app creates:
 
 ```
 <root>/<subDir>/snapshots/<timestamp>/
@@ -92,8 +95,6 @@ The tool can expose Prometheus metrics if enabled. Metrics include:
 - bytes written
 - retention activity
 
-(See the technical document for the full list.)
-
 ## Running in Kubernetes
 
 You mount:
@@ -103,12 +104,12 @@ You mount:
 
 ## More Info
 
-You can find more info in [Architecture Document](docs/architecture.md), [Technical Document](docs/technical.md).
+You can find more info in [Architecture Document](docs/architecture.md) and [Technical Document](docs/technical.md).
 A full fledged Kubernetes statefulset yaml snippet can be found in [Kubernetes Statefulset Snippet](docs/k8s.snip.md) 
 
 ## Summary
 
-**RDB Archiver** is a small tool that:
+**RDB Archiver** is a small app that:
 - watches Redis/Valkey RDB files
 - creates snapshots
 - keeps snapshots based on rules

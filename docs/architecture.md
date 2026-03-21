@@ -1,404 +1,185 @@
-﻿rdb‑archiver Architecture (Condensed)
-Your application is a pipeline that turns raw Redis/Valkey state files into archived snapshot events, then applies retention rules to keep the archive clean and bounded.
+﻿# Architecture Document
+RDB Archiver
 
-It has four major subsystems:
+## Overview
+RDB Archiver is a small service that watches a Redis or Valkey RDB file and creates snapshot 
+copies whenever the file changes. It also applies retention rules, exposes health endpoints, 
+and provides Prometheus metrics. The design is simple: detect → enqueue → process → store → clean up.
 
-Watcher
+This document explains the internal structure and how the main parts work together.
 
-Queue
+## Main Components
 
-Worker
+### Snapshot Watcher 
 
-Retention Engine
+The watcher monitors the source directory for changes to:
+- the primary file (`dump.rdb`)
+- optional auxiliary files (for example `nodes.conf`)
 
-Everything else (config, logging, filesystem abstraction) supports these four.
+It supports two modes:
+- `fsnotify` - real‑time file system events
+- `polling` - periodic checks when `fsnotify` is not supported
 
-1. Watcher — Detects New Snapshots
-   The watcher monitors the Redis/Valkey data directory for changes to:
+The watcher uses `fsprobe` to test if `fsnotify` works on the current file system.
+Some network file systems do not support `fsnotify` correctly, so `polling` is used instead.
+Also, if the `config.yaml` file is a symlink, polling will be used for detecting the changes. 
 
-dump.rdb
+When a new or updated RDB file is detected, the watcher:
+- validates the snapshot
+- creates a Snapshot object
+- sends a job to the mailbox
 
-nodes.conf (later)
+### Mailbox
 
-It can operate in two modes:
+The mailbox is a small internal queue. It connects the watcher and the worker.
 
-fsnotify (event‑driven)
+The mailbox:
+- receives jobs from the watcher
+- stores only the latest job (older ones may be overwritten)
+- delivers jobs to the worker
 
-polling (fallback)
+Metrics track how many jobs were enqueued, dequeued, or overwritten.
 
-When it detects a new RDB write, it debounces events to avoid duplicates, then enqueues a job:
+### Worker
 
-Code
-watcher → queue.Push(job{srcPath: /data/dump.rdb})
-Constraints:
+The worker processes each snapshot job:
+- copies the primary RDB file
+- copies auxiliary files
+- writes them into a timestamped directory
+- compresses files
+- updates metrics
 
-Must never copy files itself
+The worker also handles retries if file operations fail.
 
-Must never block
+### File System Layer
 
-Must be idempotent (multiple events collapse into one job)
+The `internal/fs` package provides:
+- safe file copying
+- retries with backoff
+- compression
+- atomic renames
+- directory helpers
 
-2. Queue — Decouples Watcher from Worker
-   A simple in‑memory FIFO queue:
+This layer hides OS differences (Linux vs Windows).
 
-Watcher pushes jobs
+### Retention Engine
 
-Worker pops jobs
+The retention engine removes old snapshots based on:
+- `lastCount` (keep last N snapshots)
+- cron‑based rules (hourly, daily, weekly, etc.)
 
-Ensures backpressure and isolation
+Each rule has:
+- a cron schedule
+- a count (how many to keep)
 
-This keeps the watcher fast and the worker single‑threaded and predictable.
+Retention runs periodically and logs what it removes.
 
-3. Worker — Produces Snapshot Events
-   The worker pipeline is the heart of the system.
+### Configuration System
 
-It takes a job and:
+The config file is YAML. Any value can use environment variables:
 
-Extracts the timestamp from the RDB filename
-
-Copies the RDB into the archive directory using atomic tmp→rename
-
-(Later) Copies nodes.conf into a matching timestamped filename
-
-Returns a SnapshotResult
-
-Triggers retention
-
-This is where the snapshot event is created — a pair of files with the same timestamp.
-
-Constraints:
-
-Must be atomic (tmp → rename)
-
-Must never partially write snapshots
-
-Must not parse timestamps in multiple places
-
-Must call retention after each snapshot
-
-Must use the filesystem abstraction (OSFS)
-
-4. Retention Engine — Keeps Archive Bounded
-   The retention rules are simple and folder‑based:
-
-Each rule:
-
-yaml
-- name: daily
-  count: 7
-  Means:
-
-Code
-archive/daily/ → keep last 7 snapshot events
-A snapshot event is:
-
-dump-<ts>.rdb
-
-nodes-<ts>.config (optional for now)
-
-Retention:
-
-Scans the folder
-
-Groups files by timestamp
-
-Sorts newest → oldest
-
-Keeps the first N
-
-Deletes the rest (both files)
-
-Constraints:
-
-Must ignore stray files
-
-Must not assume nodes.conf exists
-
-Must be deterministic
-
-Must not block the worker for long
-
-📦 Data Flow (End‑to‑End)
-```Code
-Redis writes dump.rdb
-↓
-Watcher detects change
-↓
-Watcher enqueues job
-↓
-Queue buffers job
-↓
-Worker pops job
-↓
-Worker copies dump.rdb → archive/<rule>/dump-<ts>.rdb
-↓
-Worker (later) copies nodes.conf → archive/<rule>/nodes-<ts>.config
-↓
-Worker triggers retention
-↓
-Retention prunes old snapshot events
+```yaml
+subDir: "$(HOSTNAME)"
+destination: "$(BACKUP_ROOT)"
 ```
-This is a one‑way, append‑then‑prune pipeline.
 
-🔒 Main Constraints (The Rules of the System)
-1. Watcher must never copy files
-   It only detects and enqueues.
+The service can reload the config at runtime.
+When running in Kubernetes with a ConfigMap, polling mode is recommended.
 
-2. Worker must produce complete snapshot events
-   Even if nodes.conf is postponed, the worker is the only place where pairing will happen.
+### Health Server
 
-3. Retention must operate on folders, not global state
-   Each rule corresponds to a folder.
+A small HTTP server exposes:
+- `/live` - process is running
+- `/ready` - service is ready to handle snapshots
 
-4. Timestamps must be extracted once, consistently
-   Centralized timestamp parsing avoids drift.
+The port is configurable.
 
-5. All file operations must be atomic
-   tmp → rename ensures no partial snapshots.
+### Prometheus Metrics
 
-6. The archive must remain monotonic
-   Snapshots only ever move forward in time; retention deletes old ones.
+The service exposes metrics for:
+- build info
+- watcher activity
+- mailbox queue
+- worker processing
+- retention cycles
 
-7. The system must be resilient to restarts
-   Queue is in‑memory, but watcher will re‑detect changes.
+These help operators understand how often snapshots are created, how long they take, and whether anything fails.
 
-his is the “executive‑summary but actually useful” version of the system you’ve built.
+### Destination Layout
 
-🧱 1. High‑Level Architecture Overview
-Your application is a four‑stage pipeline:
+Snapshots are stored under:
 
-Code
-Watcher → Queue → Worker → Retention
-Each stage has a single responsibility and hands off to the next.
-This keeps the system predictable, testable, and easy to extend.
+```
+<root>/<subDir>/snapshots/<timestamp>/
+```
 
-Key concepts you can explore anytime:
-
-Watcher design
-
-Worker pipeline
-
-Snapshot events
-
-Retention rules
-
-🔍 2. Detailed Data Flow (End‑to‑End)
-Code
-Redis writes dump.rdb
-↓
-Watcher detects change (fsnotify or polling)
-↓
-Watcher debounces events
-↓
-Watcher enqueues a job into the queue
-↓
-Worker pops job
-↓
-Worker extracts timestamp from dump.rdb
-↓
-Worker copies dump.rdb → archive/<rule>/dump-<ts>.rdb
-↓
-Worker (later) copies nodes.conf → archive/<rule>/nodes-<ts>.config
-↓
-Worker returns SnapshotResult
-↓
-Worker triggers retention
-↓
-Retention scans archive/<rule>/
-↓
-Retention keeps last N snapshot events
-↓
-Retention deletes older events
-This is a one‑directional, append‑then‑prune pipeline.
-
-🧩 3. Subsystem Responsibilities
-3.1 Watcher
-The watcher:
-
-Monitors the source directory (dump.rdb)
-
-Uses fsnotify or polling
-
-Debounces rapid events
-
-Pushes jobs into the queue
-
-Constraints:
-
-Must never copy files
-
-Must never block
-
-Must be idempotent
-
-Must not parse timestamps
-
-3.2 Queue
-A simple FIFO job queue:
-
-Watcher pushes jobs
-
-Worker pops jobs
-
-Constraints:
-
-Must not drop jobs
-
-Must not block watcher
-
-Must serialize worker execution
-
-3.3 Worker
-The worker pipeline is the heart of the system.
-
-It:
-
-Receives a job with the path to dump.rdb
-
-Extracts timestamp from filename
-
-Copies RDB atomically (tmp → rename)
-
-(Later) Copies nodes.conf with same timestamp
-
-Produces a SnapshotResult
-
-Triggers retention
-
-Constraints:
-
-Must be atomic
-
-Must not partially write snapshots
-
-Must centralize timestamp parsing
-
-Must use filesystem abstraction
-
-Must call retention after each snapshot
-
-3.4 Retention Engine
-The retention rules are folder‑based:
-
-Example rule:
-
-yaml
-- name: daily
-  count: 7
-  Meaning:
-
-Code
-archive/daily/ → keep last 7 snapshot events
-A snapshot event is:
-
-dump-<ts>.rdb
-
-nodes-<ts>.config (optional for now)
-
-Retention:
-
-Scans folder
-
-Groups files by timestamp
-
-Sorts newest → oldest
-
-Keeps first N
-
-Deletes the rest
-
-Constraints:
-
-Must ignore stray files
-
-Must not assume nodes.conf exists
-
-Must be deterministic
-
-Must not block worker too long
-
-🗂 4. Directory Structure
-Code
-/data/
+Example:
+```
+/backup/my-pod/snapshots/2024-01-01T00-00-00Z/
 dump.rdb
 nodes.conf
-
-/archive/
-daily/
-dump-2025-02-24T23-59-00.rdb
-nodes-2025-02-24T23-59-00.config
-...
-weekly/
-...
-monthly/
-...
-Each retention rule corresponds to a folder.
-
-🧠 5. Core Data Model
-Snapshot Event
-A logical snapshot consists of:
-
-RDB file
-
-nodes.conf file (optional for now)
-
-Shared timestamp
-
-Represented as:
-
-go
-type SnapshotEvent struct {
-Timestamp time.Time
-RDBPath   string
-NodesPath string
-}
-This is the unit of retention.
-
-🔒 6. System Constraints (The Rules of the Game)
-1. Watcher must never copy files
-   Only detect and enqueue.
-
-2. Worker must produce complete snapshot events
-   Even if nodes.conf is postponed.
-
-3. Retention must operate per folder
-   Each rule = one folder.
-
-4. Timestamps must be parsed in one place
-   Avoid drift and bugs.
-
-5. All file writes must be atomic
-   tmp → rename.
-
-6. Archive must remain monotonic
-   Snapshots only move forward in time.
-
-7. System must be restart‑safe
-   Watcher will re‑detect changes.
-
-🧭 7. Sequence Diagram (ASCII)
-Code
-Redis → Watcher: dump.rdb updated
-Watcher → Queue: enqueue job
-Queue → Worker: deliver job
-Worker → FS: copy dump.rdb (tmp → rename)
-Worker → FS: (later) copy nodes.conf
-Worker → Retention: apply rules
-Retention → FS: delete old snapshots
-Worker → Main: SnapshotResult
-🧱 8. Mermaid Diagram
-
-```mermaid
-flowchart TD
-    A[Redis writes dump.rdb] --> B[Watcher detects change]
-    B --> C[Debounce]
-    C --> D[Queue.push(job)]
-    D --> E[Worker.pop(job)]
-    E --> F[Worker copies dump.rdb]
-    F --> G[Worker copies nodes.conf (later)]
-    G --> H[Worker returns SnapshotResult]
-    H --> I[Retention.apply()]
-    I --> J[Retention prunes old snapshots]
 ```
-🎯 9. The Architecture in One Sentence
-rdb‑archiver is a watcher→queue→worker→retention pipeline that turns raw Redis state files into timestamped snapshot events and keeps only the most recent ones per retention rule
+
+The timestamp is generated when the worker processes the job.
+
+### Redis and Valkey Compatibility
+
+Redis and Valkey both write RDB files in the same format and with the same file names.
+The archiver does not parse the RDB file; it only copies it.
+Therefore, it works with both systems without any special handling.
+
+#### Data Flow
+```
+     +---------------+
+     |    fsprobe    |
+     +-------+-------+
+             |
+             v
+  +----------+-----------+
+  |   Snapshot Watcher   |
+  |  (fsnotify or poll)  |
+  +----------+-----------+
+             |
+             v
+      +------+------+
+      |   Mailbox   |
+      +------+------+
+             |
+             v
+      +------+------+
+      |   Worker    |
+      +------+------+
+             |
+             v
+  +----------+-----------+
+  | Destination Storage  |
+  +----------+-----------+
+             |
+             v
+  +----------+-----------+
+  |   Retention Engine   |
+  +----------------------+
+```
+
+### Why this architecture
+
+The design is intentionally simple:
+- the watcher only detects changes.
+- the mailbox decouples detection from processing.
+- the worker does all file operations.
+- retention is separate and runs on its own schedule.
+- metrics and health endpoints make it observable.
+- config reload avoids restarts in Kubernetes.
+
+This separation keeps each part small and easy to reason about.
+
+### Summary
+
+RDB Archiver is built around a clear pipeline:
+1. detect new RDB
+2. enqueue job
+3. process and store snapshot
+4. apply retention rules
+
+It works with Redis and Valkey, supports multiple file‑watching modes,
+and is designed to run well in Kubernetes or on a single machine.

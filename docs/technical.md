@@ -241,6 +241,8 @@ Full yaml snip in [Kubernetes Statefulset Snippet](technical.md)
 | worker          | rdb_archiver_worker_jobs_retried_total              | jobs retried                                 |
 | worker          | rdb_archiver_worker_job_processing_duration_seconds | histogram of job processing time             |
 | worker          | rdb_archiver_worker_bytes_written_total             | total bytes written                          |
+| worker          | rdb_archiver_worker_destination_total_bytes         | destination total size                       |
+| worker          | rdb_archiver_worker_destination_free_bytes          | destination free size                        |
 
 ## Troubleshooting
 

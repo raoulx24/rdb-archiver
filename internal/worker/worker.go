@@ -70,23 +70,27 @@ func (w *Worker) Start(ctx context.Context) {
 
 // Handle writes a snapshotwatcher directory and applies retention.
 func (w *Worker) Handle(ctx context.Context, metrics Metrics, snap snapshot.Snapshot) error {
-	w.logg.Debug("worker starting snapshot handling", "function", "Handle")
-	finalDir, err := w.writeSnapshot(ctx, metrics, snap)
-	if err != nil {
-		w.logg.Error("failed to write snapshot", "error", err)
-		return err
-	}
-
 	w.mu.RLock()
 	dest := w.cfg
 	w.mu.RUnlock()
 
 	root := filepath.Join(dest.Root, dest.SubDir)
+
+	w.logg.Debug("worker starting snapshot handling", "function", "Handle")
+	finalDir, err := w.writeSnapshot(ctx, dest, metrics, snap)
+	if err != nil {
+		w.updateDestinationDirSizeMetrics(root, metrics)
+		w.logg.Error("failed to write snapshot", "error", err)
+		return err
+	}
+
 	w.logg.Debug("destination root resolved", "function", "Handle", "root", root)
 
 	if err := w.retention.Apply(ctx, w.fs, root, finalDir); err != nil {
 		w.logg.Error("worker: retention failed", "error", err)
 	}
+
+	w.updateDestinationDirSizeMetrics(root, metrics)
 
 	return nil
 }
@@ -104,13 +108,9 @@ func (w *Worker) UpdateConfig(cfg Config) {
 }
 
 // writeSnapshot creates a tar+compressed archive for all snapshot files atomically.
-func (w *Worker) writeSnapshot(ctx context.Context, metrics Metrics, snap snapshot.Snapshot) (string, error) {
-	w.mu.RLock()
-	dest := w.cfg
-	w.mu.RUnlock()
-
-	root := filepath.Join(dest.Root, dest.SubDir)
-	snapDir := filepath.Join(root, dest.SnapshotSubdir)
+func (w *Worker) writeSnapshot(ctx context.Context, cfg Config, metrics Metrics, snap snapshot.Snapshot) (string, error) {
+	root := filepath.Join(cfg.Root, cfg.SubDir)
+	snapDir := filepath.Join(root, cfg.SnapshotSubdir)
 
 	ts := snap.Primary.ModTime.UTC().Format("2006-01-02T15-04-05")
 
@@ -182,4 +182,14 @@ func (w *Worker) updateRetentionRules(cfg Config) {
 		removeUnknownFolders, "ruleNames",
 		ruleNames, "ruleCrons", ruleCrons, "ruleCounts", ruleCounts)
 	w.retention.UpdateConfig(retention.Config{RemoveUnknownFolders: removeUnknownFolders, SnapshotExtension: snapshotExtension, Rules: updated})
+}
+
+func (w *Worker) updateDestinationDirSizeMetrics(path string, metrics Metrics) {
+	total, free, err := w.fs.StatFS(path)
+	if err == nil {
+		metrics.SetDestinationTotalBytes(total)
+		metrics.SetDestinationFreeBytes(free)
+	} else {
+		w.logg.Warn("failed to stat filesystem", "error", err)
+	}
 }

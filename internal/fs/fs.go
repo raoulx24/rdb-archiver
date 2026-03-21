@@ -24,4 +24,6 @@ type FS interface {
 	ReadDir(path string) ([]os.DirEntry, error)
 	CopyDir(ctx context.Context, src, dst string) error
 	CreateCompressedTar(ctx context.Context, srcDir string, files []string, dst string) error
+
+	StatFS(path string) (total uint64, free uint64, err error)
 }

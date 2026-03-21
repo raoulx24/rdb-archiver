@@ -8,6 +8,8 @@ type Metrics interface {
 	JobRetried()
 	ObserveJobProcessingDuration(d time.Duration)
 	AddBytesWritten(n int64)
+	SetDestinationTotalBytes(n uint64)
+	SetDestinationFreeBytes(n uint64)
 }
 
 func (w *Worker) RebuildMetrics(newMetrics Metrics) {

@@ -1,6 +1,6 @@
 module github.com/raoulx24/rdb-archiver
 
-go 1.25.0
+go 1.26.2
 
 require github.com/robfig/cron/v3 v3.0.1
 
@@ -20,6 +20,6 @@ require (
 	github.com/prometheus/common v0.67.5 // indirect
 	github.com/prometheus/procfs v0.20.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
-	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
